@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import ImportStudentsTxt from "@/components/admin/ImportStudentsTxt";
 import CourseByLecturer from "@/components/admin/CourseByLecturer";
 import AttendanceQR from "@/components/admin/AttendanceQR";
+import ExportGradesExcel from "@/components/admin/ExportGradesExcel";
 
 
 
@@ -376,6 +377,22 @@ async function refreshAttendance() {
             </div></section></div>}
 
           {tab === "grades" && <section className="panel"><div className="panel-head"><div><h2>Input Nilai</h2><p>Isi nilai mentah. Nilai akhir dihitung otomatis berdasarkan bobot.</p></div><span className={`badge ${totalWeight === 100 ? "good" : "warn"}`}>Total bobot {totalWeight}%</span></div><div className="panel-body">
+            {selectedCourse && (
+  <div
+    style={{
+      marginBottom: 16,
+      display: "flex",
+      justifyContent: "flex-end",
+    }}
+  >
+    <ExportGradesExcel
+      course={selectedCourse}
+      students={courseStudents}
+      assessments={courseAssessments}
+      grades={grades}
+    />
+  </div>
+)}
             <div className="assessment-manager"><div className="inline-form"><div className="field"><label>Nama Komponen</label><input className="input" value={newAssessment.name} onChange={(e) => setNewAssessment({ ...newAssessment, name: e.target.value })} placeholder="Tugas 2" /></div><div className="field small-field"><label>Kategori</label><select className="select" value={newAssessment.category} onChange={(e) => setNewAssessment({ ...newAssessment, category: e.target.value })}><option>Tugas</option><option>Quiz</option><option>UTS</option><option>UAS</option><option>Proyek</option><option>Lainnya</option></select></div><div className="field small-field"><label>Maks.</label><input className="input" type="number" min="1" value={newAssessment.max_score} onChange={(e) => setNewAssessment({ ...newAssessment, max_score: Number(e.target.value) })}/></div><div className="field small-field"><label>Bobot %</label><input className="input" type="number" min="0" max="100" value={newAssessment.weight} onChange={(e) => setNewAssessment({ ...newAssessment, weight: Number(e.target.value) })}/></div><button className="btn btn-secondary" onClick={addAssessment}>Tambah Komponen</button></div>
               <div className="assessment-chips">{courseAssessments.map((item) => <div className="assessment-chip" key={item.id}><span><strong>{item.name}</strong><small>{item.category} · maks {item.max_score} · {item.weight}%</small></span><button onClick={() => editAssessment(item)}>Edit</button><button className="danger-link" onClick={() => deleteAssessment(item)}>Hapus</button></div>)}</div>
             </div>

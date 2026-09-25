@@ -10,6 +10,12 @@ export const metadata: Metadata = {
   description: "Website multi-kelas untuk rekap absensi dan nilai berbasis Next.js dan Supabase",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="id">
@@ -31,7 +37,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         </header>
         <main>{children}</main>
         <footer className="site-footer">
-          <div className="shell">Rekap Akademik Mahasiswa · Next.js + Supabase</div>
+          <div className="shell">Rekap Akademik Mahasiswa · by. Rafli Indra Valisya</div>
         </footer>
       </body>
     </html>
