@@ -4,7 +4,7 @@ import { buildAttendanceMap, formatShortDate, getHeldMeetingIds, getStudentRecap
 import { buildGradeMap, calculateFinalScore } from "@/lib/grades";
 import type { Assessment, Attendance, Course, Grade, Meeting, Student } from "@/lib/types";
 import { useMemo, useState } from "react";
-import PrintAttendance from "@/components/PrintAttendance";
+import PrintAttendance from "@/components/admin/PrintAttendance";
 
 type Props = {
   courses: Course[];
