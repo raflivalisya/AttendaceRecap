@@ -78,6 +78,12 @@ const emptyCourse: NewCourseForm = {
 
 };
 
+function addDays(date: string, days: number) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 
 
 
@@ -1762,8 +1768,6 @@ async function refreshAttendance() {
   </section>
 
 )}
-
-
 
           {tab === "settings" && <section className="panel"><div className="panel-head"><div><h2>Pengaturan Kelas</h2><p>Ubah identitas dan publikasi nilai.</p></div></div><div className="panel-body form-grid-3">
 
