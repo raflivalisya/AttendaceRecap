@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import ImportStudentsTxt from "@/components/admin/ImportStudentsTxt";
 import CourseByLecturer from "@/components/admin/CourseByLecturer";
+import AttendanceQR from "@/components/admin/AttendanceQR";
 
 
 
@@ -274,6 +275,51 @@ async function refreshStudents() {
     notify("Kelas berhasil dihapus.");
   }
 
+async function refreshAttendance() {
+  const { data, error } =
+    await supabase
+      .from("attendance")
+      .select("*");
+
+  if (error) {
+    notify(
+      `Gagal memuat absensi: ${error.message}`
+    );
+
+    return;
+  }
+
+  const rows =
+    (data ?? []) as Attendance[];
+
+  setAttendance(rows);
+
+  const map:
+    Record<
+      string,
+      StatusValue
+    > = {};
+
+  courseStudents.forEach(
+    (student) => {
+      map[student.id] =
+        rows.find(
+          (item) =>
+            item.meeting_id ===
+              selectedMeetingId &&
+            item.student_id ===
+              student.id
+        )?.status ?? "";
+    }
+  );
+
+  setAttendanceDraft(map);
+
+  notify(
+    "Data absensi QR diperbarui."
+  );
+}
+
   async function logout() { await supabase.auth.signOut(); router.refresh(); }
 
   return <section className="page"><div className="shell">
@@ -310,7 +356,22 @@ async function refreshStudents() {
     }}
   />
           {tab === "attendance" && <div className="admin-grid"><aside className="panel admin-side"><div className="panel-head"><div><h2>Pertemuan</h2><p>{courseMeetings.length} pertemuan</p></div></div><div className="panel-body"><div className="meeting-list">{courseMeetings.map((meeting) => <button key={meeting.id} className={`meeting-btn ${selectedMeetingId === meeting.id ? "active" : ""}`} onClick={() => loadMeeting(meeting.id)}><span><strong>P{meeting.meeting_no}</strong><br/><small>{meeting.meeting_date}</small></span><span>›</span></button>)}</div></div></aside>
-            <section className="panel"><div className="panel-head"><div><h2>Input Absensi {selectedMeeting ? `Pertemuan ${selectedMeeting.meeting_no}` : ""}</h2><p>{selectedMeeting ? formatLongDate(selectedMeeting.meeting_date) : "Pilih pertemuan"}</p></div></div><div className="panel-body"><div className="admin-toolbar"><div className="field"><label>Tanggal Pertemuan</label><input className="input" type="date" value={selectedMeeting?.meeting_date ?? ""} onChange={(e) => updateMeetingDate(e.target.value)} /></div><div className="admin-actions"><button className="btn btn-success" onClick={() => { const x: Record<string, StatusValue> = {}; courseStudents.forEach((s) => x[s.id] = "H"); setAttendanceDraft(x); }}>Semua Hadir</button><button className="btn btn-secondary" onClick={() => { const x: Record<string, StatusValue> = {}; courseStudents.forEach((s) => x[s.id] = ""); setAttendanceDraft(x); }}>Kosongkan</button><button className="btn btn-primary" onClick={saveAttendance} disabled={saving || !selectedMeetingId}>{saving ? "Menyimpan..." : "Simpan Absensi"}</button></div></div>
+            <section className="panel"><div className="panel-head"><div><h2>Input Absensi {selectedMeeting ? `Pertemuan ${selectedMeeting.meeting_no}` : ""}</h2><p>{selectedMeeting ? formatLongDate(selectedMeeting.meeting_date) : "Pilih pertemuan"}</p></div></div><div className="panel-body"><div className="admin-toolbar"><div className="field"><label>Tanggal Pertemuan</label><input className="input" type="date" value={selectedMeeting?.meeting_date ?? ""} onChange={(e) => updateMeetingDate(e.target.value)} /></div><div className="admin-actions"><button className="btn btn-success" onClick={() => { const x: Record<string, StatusValue> = {}; courseStudents.forEach((s) => x[s.id] = "H"); setAttendanceDraft(x); }}>Semua Hadir</button>
+            <button
+  className="btn btn-secondary"
+  onClick={refreshAttendance}
+>
+  ↻ Refresh QR
+</button>
+            <button className="btn btn-secondary" onClick={() => { const x: Record<string, StatusValue> = {}; courseStudents.forEach((s) => x[s.id] = ""); setAttendanceDraft(x); }}>Kosongkan</button><button className="btn btn-primary" onClick={saveAttendance} disabled={saving || !selectedMeetingId}>{saving ? "Menyimpan..." : "Simpan Absensi"}</button></div></div>
+              {selectedMeeting && selectedCourse && (
+  <AttendanceQR
+    meetingId={selectedMeeting.id}
+    meetingNo={selectedMeeting.meeting_no}
+    courseName={selectedCourse.name}
+    classLabel={selectedCourse.class_name}
+  />
+)}
               <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama Mahasiswa</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} onChange={(e) => setAttendanceDraft((d) => ({ ...d, [student.id]: e.target.value as StatusValue }))}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((key) => <option key={key} value={key}>{key} — {STATUS_LABELS[key]}</option>)}</select></td></tr>)}</tbody></table>{courseStudents.length === 0 && <div className="empty-state">Tambahkan mahasiswa terlebih dahulu pada tab Mahasiswa.</div>}</div>
             </div></section></div>}
 
