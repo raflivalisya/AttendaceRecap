@@ -162,6 +162,16 @@ h1 { font-size: clamp(28px, 4vw, 42px); line-height:1.08; margin:0; letter-spaci
 
 /* Flexible multi-course dashboard */
 .course-picker { min-width: min(360px, 100%); display:flex; flex-direction:column; gap:7px; }
+.public-course-filters {
+  min-width: min(520px, 100%);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.public-course-filters .course-picker {
+  min-width: 0;
+}
 .course-picker label { font-size:12px; font-weight:800; color:#435365; }
 .tab-bar { display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap; }
 .tab-btn { border:1px solid var(--line); background:white; color:#526273; border-radius:10px; padding:10px 14px; font-weight:800; }
@@ -213,6 +223,10 @@ h1 { font-size: clamp(28px, 4vw, 42px); line-height:1.08; margin:0; letter-spaci
   .form-grid-3 { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 680px) {
+  .public-course-filters {
+  width: 100%;
+  grid-template-columns: 1fr;
+}
   .course-list, .form-grid-3 { grid-template-columns:1fr; }
   .selected-course-head { align-items:flex-start; flex-direction:column; }
   .save-row { align-items:stretch; flex-direction:column; }

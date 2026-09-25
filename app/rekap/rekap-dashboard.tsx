@@ -15,10 +15,43 @@ type Props = {
 };
 
 export default function RekapDashboard({ courses, students, meetings, attendance, assessments, grades }: Props) {
-  const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id ?? "");
-  const [tab, setTab] = useState<"attendance" | "grades">("attendance");
+ const [selectedCourseId, setSelectedCourseId] = useState(
+  courses[0]?.id ?? ""
+);
 
-  const course = courses.find((item) => item.id === selectedCourseId) ?? courses[0];
+const [selectedLecturer, setSelectedLecturer] = useState(
+  courses[0]?.lecturer ?? ""
+);
+
+const [tab, setTab] = useState<"attendance" | "grades">(
+  "attendance"
+);
+
+// Ambil daftar dosen tanpa duplikat
+const lecturers = useMemo(() => {
+  return Array.from(
+    new Set(
+      courses
+        .map((item) => item.lecturer?.trim())
+        .filter(Boolean)
+    )
+  ).sort();
+}, [courses]);
+
+// Filter mata kuliah berdasarkan dosen
+const lecturerCourses = useMemo(() => {
+  return courses.filter(
+    (item) => item.lecturer === selectedLecturer
+  );
+}, [courses, selectedLecturer]);
+
+const course =
+  courses.find(
+    (item) => item.id === selectedCourseId
+  ) ??
+  lecturerCourses[0] ??
+  courses[0];
+
   const courseStudents = useMemo(() => students.filter((item) => item.course_id === course?.id), [students, course?.id]);
   const courseMeetings = useMemo(() => meetings.filter((item) => item.course_id === course?.id).sort((a, b) => a.meeting_no - b.meeting_no), [meetings, course?.id]);
   const meetingIds = useMemo(() => new Set(courseMeetings.map((item) => item.id)), [courseMeetings]);
@@ -38,7 +71,15 @@ export default function RekapDashboard({ courses, students, meetings, attendance
   const avgAttendance = heldCount && courseStudents.length ? Math.round((totalPresent / (heldCount * courseStudents.length)) * 100) : 0;
   const gradeMap = buildGradeMap(courseGrades);
   const totalWeight = courseAssessments.reduce((sum, item) => sum + Number(item.weight), 0);
+function handleLecturerChange(lecturer: string) {
+  setSelectedLecturer(lecturer);
 
+  const firstCourse = courses.find(
+    (item) => item.lecturer === lecturer
+  );
+
+  setSelectedCourseId(firstCourse?.id ?? "");
+}
   return (
     <section className="page">
       <div className="shell">
@@ -48,12 +89,54 @@ export default function RekapDashboard({ courses, students, meetings, attendance
             <h1>Rekap Absensi & Nilai</h1>
             <p>Pilih kelas untuk melihat rekap kehadiran dan nilai yang sudah dipublikasikan oleh admin.</p>
           </div>
-          <div className="course-picker">
-            <label>Kelas / Mata Kuliah</label>
-            <select className="select" value={course.id} onChange={(e) => setSelectedCourseId(e.target.value)}>
-              {courses.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.class_name}</option>)}
-            </select>
-          </div>
+          <div className="public-course-filters">
+
+  {/* PILIH DOSEN */}
+  <div className="course-picker">
+    <label>Dosen Pengampu</label>
+
+    <select
+      className="select"
+      value={selectedLecturer}
+      onChange={(e) =>
+        handleLecturerChange(e.target.value)
+      }
+    >
+      {lecturers.map((lecturer) => (
+        <option
+          key={lecturer}
+          value={lecturer}
+        >
+          {lecturer}
+        </option>
+      ))}
+    </select>
+  </div>
+
+
+  {/* PILIH MATA KULIAH */}
+  <div className="course-picker">
+    <label>Kelas / Mata Kuliah</label>
+
+    <select
+      className="select"
+      value={course.id}
+      onChange={(e) =>
+        setSelectedCourseId(e.target.value)
+      }
+    >
+      {lecturerCourses.map((item) => (
+        <option
+          key={item.id}
+          value={item.id}
+        >
+          {item.name} — {item.class_name}
+        </option>
+      ))}
+    </select>
+  </div>
+
+</div>
         </div>
 
         <div className="info-grid">
