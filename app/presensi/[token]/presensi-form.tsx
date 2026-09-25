@@ -150,11 +150,13 @@ export default function PresensiForm({
     return (
       <section className="page">
         <div
-          className="shell"
-          style={{
-            maxWidth: 600,
-          }}
-        >
+  className="shell"
+  style={{
+    width: "100%",
+    maxWidth: 600,
+    margin: "0 auto",
+  }}
+>
           <div className="panel">
             <div className="panel-body">
               <h2>

@@ -367,22 +367,22 @@ export default function AttendanceQR({
             }}
           >
             <div
-              style={{
-                display:
-                  "inline-block",
-                background:
-                  "#ffffff",
-                padding: 20,
-                borderRadius:
-                  16,
-              }}
-            >
-              <QRCodeSVG
-                value={qrUrl}
-                size={260}
-                level="H"
-              />
-            </div>
+  style={{
+    width: "100%",
+    maxWidth: 280,
+    margin: "0 auto",
+  }}
+>
+  <QRCodeSVG
+    value={qrUrl}
+    size={280}
+    level="H"
+    style={{
+      width: "100%",
+      height: "auto",
+    }}
+  />
+</div>
 
             <p
               style={{

@@ -363,3 +363,319 @@ h1 { font-size: clamp(28px, 4vw, 42px); line-height:1.08; margin:0; letter-spaci
     font-size: 8px;
   }
 }
+
+/* =====================================================
+   RESPONSIVE MOBILE
+   Admin + Rekap Publik + Presensi QR
+===================================================== */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+img,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* =====================================================
+   TABLE
+===================================================== */
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-wrap table {
+  min-width: max-content;
+}
+
+/* =====================================================
+   ADMIN
+===================================================== */
+
+@media (max-width: 900px) {
+
+  .course-admin-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  .course-sidebar {
+    width: 100% !important;
+    max-width: none !important;
+    position: static !important;
+  }
+
+  .admin-main {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .course-list {
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    padding-bottom: 8px !important;
+  }
+
+  .course-list button {
+    min-width: 210px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .selected-course-head {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .admin-toolbar {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  .admin-toolbar .field {
+    flex: 1 1 180px !important;
+  }
+
+  .admin-toolbar button {
+    flex: 1 1 auto !important;
+  }
+
+  .admin-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .inline-form {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .panel {
+    max-width: 100% !important;
+  }
+}
+
+/* =====================================================
+   TAB ADMIN
+===================================================== */
+
+@media (max-width: 680px) {
+
+  .admin-tabs,
+  .tab-bar {
+    width: 100%;
+    display: flex !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    padding-bottom: 5px !important;
+
+    scrollbar-width: none;
+  }
+
+  .admin-tabs::-webkit-scrollbar,
+  .tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-btn {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    min-width: 105px !important;
+  }
+}
+
+/* =====================================================
+   PUBLIC REKAP
+===================================================== */
+
+@media (max-width: 900px) {
+
+  .hero {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 20px !important;
+  }
+
+  .hero > div {
+    width: 100% !important;
+  }
+
+  .public-course-filters {
+    width: 100% !important;
+    min-width: 0 !important;
+
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .course-picker {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .course-picker select,
+  .course-picker .select {
+    width: 100% !important;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* =====================================================
+   MOBILE PHONE
+===================================================== */
+
+@media (max-width: 600px) {
+
+  .page {
+    padding: 16px 12px !important;
+  }
+
+  .shell {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .hero {
+    padding-top: 8px !important;
+  }
+
+  .hero h1 {
+    font-size: 30px !important;
+    line-height: 1.1 !important;
+  }
+
+  .hero p {
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+  }
+
+  .eyebrow {
+    font-size: 11px !important;
+  }
+
+  /* Statistik jadi 1 kolom */
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Panel */
+  .panel-head {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .panel-body {
+    padding: 14px !important;
+  }
+
+  /* Input */
+  .input,
+  .select,
+  input,
+  select,
+  textarea {
+    width: 100%;
+    max-width: 100%;
+    font-size: 16px !important;
+  }
+
+  /*
+    16px penting agar Safari iPhone
+    tidak otomatis zoom ketika input diklik.
+  */
+
+  .field {
+    width: 100% !important;
+  }
+
+  /* Tombol */
+  .btn {
+    min-height: 42px;
+  }
+
+  .admin-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-toolbar button {
+    width: 100% !important;
+  }
+
+  /* Header kelas aktif */
+  .selected-course-head h2 {
+    font-size: 20px !important;
+  }
+
+  .selected-course-head p {
+    font-size: 13px !important;
+  }
+
+  /* QR */
+  .qr-container,
+  .attendance-qr {
+    width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  /* Tombol cetak */
+  .print-button {
+    width: 100% !important;
+  }
+}
+
+/* =====================================================
+   HP SANGAT KECIL
+===================================================== */
+
+@media (max-width: 380px) {
+
+  .page {
+    padding: 12px 8px !important;
+  }
+
+  .hero h1 {
+    font-size: 26px !important;
+  }
+
+  .panel-body {
+    padding: 12px !important;
+  }
+
+  .btn {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    font-size: 13px !important;
+  }
+}
