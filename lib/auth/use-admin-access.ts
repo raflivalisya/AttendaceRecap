@@ -1,262 +1,107 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type { AppRole, CourseRole } from "@/lib/auth/roles";
 
-import {
-  createClient,
-} from "@/lib/supabase/client";
+type MembershipMap = Record<string, CourseRole>;
 
-import type {
-  AppRole,
-  CourseRole,
-} from "@/lib/auth/roles";
-
-type MembershipMap = Record<
-  string,
-  CourseRole
->;
-
-type AdminAccessState = {
+type AccessState = {
   loading: boolean;
   error: string;
-
   userId: string;
   displayName: string;
-
   profileRole: AppRole | null;
-
   memberships: MembershipMap;
 };
 
 export function useAdminAccess() {
-  const supabase =
-    useMemo(
-      () => createClient(),
-      []
-    );
+  const supabase = useMemo(() => createClient(), []);
 
-  const [
-    state,
-    setState,
-  ] =
-    useState<AdminAccessState>({
-      loading: true,
-      error: "",
-
-      userId: "",
-      displayName: "",
-
-      profileRole: null,
-
-      memberships: {},
-    });
-
-  /*
-   * =========================================
-   * LOAD CURRENT USER + ROLE
-   * =========================================
-   */
+  const [state, setState] = useState<AccessState>({
+    loading: true,
+    error: "",
+    userId: "",
+    displayName: "",
+    profileRole: null,
+    memberships: {},
+  });
 
   useEffect(() => {
-    let cancelled =
-      false;
+    let cancelled = false;
 
     async function loadAccess() {
       try {
-        setState(
-          (current) => ({
-            ...current,
-            loading: true,
-            error: "",
-          })
-        );
+        setState((current) => ({ ...current, loading: true, error: "" }));
 
-        /*
-         * User login yang tervalidasi
-         * oleh Supabase Auth.
-         */
         const {
           data: userData,
           error: userError,
-        } =
-          await supabase.auth.getUser();
+        } = await supabase.auth.getUser();
 
-        if (userError) {
-          throw userError;
-        }
+        if (userError) throw userError;
 
-        const user =
-          userData.user;
+        const user = userData.user;
+        if (!user) throw new Error("User belum login.");
 
-        if (!user) {
-          throw new Error(
-            "Sesi login tidak ditemukan."
-          );
-        }
-
-        /*
-         * Ambil profil global.
-         */
-        const {
-          data: profile,
-          error:
-            profileError,
-        } = await supabase
-          .from(
-            "admin_profiles"
-          )
-          .select(
-            `
-            user_id,
-            display_name,
-            role
-            `
-          )
-          .eq(
-            "user_id",
-            user.id
-          )
+        const { data: profile, error: profileError } = await supabase
+          .from("admin_profiles")
+          .select("user_id, display_name, role")
+          .eq("user_id", user.id)
           .maybeSingle();
 
-        if (profileError) {
-          throw profileError;
-        }
-
+        if (profileError) throw profileError;
         if (!profile) {
-          throw new Error(
-            "Profil admin/dosen tidak ditemukan."
-          );
+          throw new Error("Profil pengguna tidak ditemukan di admin_profiles.");
         }
 
-        const profileRole =
-          profile.role as AppRole;
+        const profileRole = profile.role as AppRole;
 
-        /*
-         * Super Admin tidak perlu
-         * mengambil membership karena
-         * otomatis boleh mengakses semua.
-         */
-        if (
-          profileRole ===
-          "super_admin"
-        ) {
+        if (profileRole === "super_admin") {
           if (!cancelled) {
             setState({
-              loading:
-                false,
-
-              error:
-                "",
-
-              userId:
-                user.id,
-
+              loading: false,
+              error: "",
+              userId: user.id,
               displayName:
-                profile.display_name ??
-                user.email ??
-                "Super Admin",
-
-              profileRole:
-                "super_admin",
-
-              memberships:
-                {},
+                profile.display_name ?? user.email ?? "Super Admin",
+              profileRole: "super_admin",
+              memberships: {},
             });
           }
-
           return;
         }
 
-        /*
-         * Ambil daftar kelas
-         * yang ditugaskan ke user.
-         */
-        const {
-          data:
-            membershipRows,
+        const { data: membershipRows, error: membershipError } = await supabase
+          .from("course_members")
+          .select("course_id, role")
+          .eq("user_id", user.id);
 
-          error:
-            membershipError,
-        } = await supabase
-          .from(
-            "course_members"
-          )
-          .select(
-            `
-            course_id,
-            role
-            `
-          )
-          .eq(
-            "user_id",
-            user.id
-          );
+        if (membershipError) throw membershipError;
 
-        if (membershipError) {
-          throw membershipError;
-        }
-
-        const memberships:
-          MembershipMap =
-          {};
-
-        for (
-          const row of
-          membershipRows ?? []
-        ) {
-          memberships[
-            row.course_id
-          ] =
-            row.role as CourseRole;
+        const memberships: MembershipMap = {};
+        for (const row of membershipRows ?? []) {
+          memberships[row.course_id] = row.role as CourseRole;
         }
 
         if (!cancelled) {
           setState({
-            loading:
-              false,
-
-            error:
-              "",
-
-            userId:
-              user.id,
-
-            displayName:
-              profile.display_name ??
-              user.email ??
-              "Pengguna",
-
+            loading: false,
+            error: "",
+            userId: user.id,
+            displayName: profile.display_name ?? user.email ?? "Pengguna",
             profileRole,
-
             memberships,
           });
         }
-      } catch (
-        error: any
-      ) {
-        console.error(
-          "LOAD ACCESS ERROR:",
-          error
-        );
-
+      } catch (error: any) {
+        console.error("LOAD ACCESS ERROR:", error);
         if (!cancelled) {
-          setState(
-            (current) => ({
-              ...current,
-
-              loading:
-                false,
-
-              error:
-                error?.message ||
-                "Gagal membaca hak akses.",
-            })
-          );
+          setState((current) => ({
+            ...current,
+            loading: false,
+            error: error?.message || "Gagal membaca hak akses.",
+          }));
         }
       }
     }
@@ -264,231 +109,74 @@ export function useAdminAccess() {
     void loadAccess();
 
     return () => {
-      cancelled =
-        true;
+      cancelled = true;
     };
-  }, [
-    supabase,
-  ]);
+  }, [supabase]);
 
-  /*
-   * =========================================
-   * GLOBAL ROLE
-   * =========================================
-   */
+  const isSuperAdmin = state.profileRole === "super_admin";
 
-  const isSuperAdmin =
-    state.profileRole ===
-    "super_admin";
+  const getCourseRole = useCallback(
+    (courseId: string): CourseRole | "super_admin" | null => {
+      if (isSuperAdmin) return "super_admin";
+      return state.memberships[courseId] ?? null;
+    },
+    [isSuperAdmin, state.memberships],
+  );
 
-  /*
-   * =========================================
-   * COURSE ROLE
-   * =========================================
-   */
+  const canSeeCourse = useCallback(
+    (courseId: string) => {
+      if (isSuperAdmin) return true;
+      return Boolean(state.memberships[courseId]);
+    },
+    [isSuperAdmin, state.memberships],
+  );
 
-  const getCourseRole =
-    useCallback(
-      (
-        courseId:
-          string
-      ):
-        CourseRole |
-        "super_admin" |
-        null => {
-        if (
-          isSuperAdmin
-        ) {
-          return "super_admin";
-        }
+  const canEditCourse = useCallback(
+    (courseId: string) => {
+      const role = getCourseRole(courseId);
+      return role === "super_admin" || role === "lecturer";
+    },
+    [getCourseRole],
+  );
 
-        return (
-          state.memberships[
-            courseId
-          ] ??
-          null
-        );
-      },
-      [
-        isSuperAdmin,
-        state.memberships,
-      ]
-    );
+  const canManageStudents = useCallback(
+    (courseId: string) => {
+      const role = getCourseRole(courseId);
+      return role === "super_admin" || role === "lecturer";
+    },
+    [getCourseRole],
+  );
 
-  /*
-   * =========================================
-   * CAN SEE COURSE
-   * =========================================
-   */
+  const canManageAttendance = useCallback(
+    (courseId: string) => {
+      const role = getCourseRole(courseId);
+      return (
+        role === "super_admin" ||
+        role === "lecturer" ||
+        role === "assistant"
+      );
+    },
+    [getCourseRole],
+  );
 
-  const canSeeCourse =
-    useCallback(
-      (
-        courseId:
-          string
-      ) => {
-        if (
-          isSuperAdmin
-        ) {
-          return true;
-        }
-
-        return Boolean(
-          state.memberships[
-            courseId
-          ]
-        );
-      },
-      [
-        isSuperAdmin,
-        state.memberships,
-      ]
-    );
-
-  /*
-   * =========================================
-   * EDIT COURSE
-   * =========================================
-   */
-
-  const canEditCourse =
-    useCallback(
-      (
-        courseId:
-          string
-      ) => {
-        const role =
-          getCourseRole(
-            courseId
-          );
-
-        return (
-          role ===
-            "super_admin" ||
-          role ===
-            "lecturer"
-        );
-      },
-      [
-        getCourseRole,
-      ]
-    );
-
-  /*
-   * =========================================
-   * MANAGE STUDENTS
-   * =========================================
-   */
-
-  const canManageStudents =
-    useCallback(
-      (
-        courseId:
-          string
-      ) => {
-        const role =
-          getCourseRole(
-            courseId
-          );
-
-        return (
-          role ===
-            "super_admin" ||
-          role ===
-            "lecturer"
-        );
-      },
-      [
-        getCourseRole,
-      ]
-    );
-
-  /*
-   * =========================================
-   * ATTENDANCE / QR
-   * =========================================
-   */
-
-  const canManageAttendance =
-    useCallback(
-      (
-        courseId:
-          string
-      ) => {
-        const role =
-          getCourseRole(
-            courseId
-          );
-
-        return (
-          role ===
-            "super_admin" ||
-          role ===
-            "lecturer" ||
-          role ===
-            "assistant"
-        );
-      },
-      [
-        getCourseRole,
-      ]
-    );
-
-  /*
-   * =========================================
-   * GRADES
-   * =========================================
-   */
-
-  const canManageGrades =
-    useCallback(
-      (
-        courseId:
-          string
-      ) => {
-        const role =
-          getCourseRole(
-            courseId
-          );
-
-        return (
-          role ===
-            "super_admin" ||
-          role ===
-            "lecturer"
-        );
-      },
-      [
-        getCourseRole,
-      ]
-    );
-
-  /*
-   * =========================================
-   * CREATE / DELETE COURSE
-   * =========================================
-   */
-
-  const canCreateCourse =
-    isSuperAdmin;
-
-  const canDeleteCourse =
-    isSuperAdmin;
+  const canManageGrades = useCallback(
+    (courseId: string) => {
+      const role = getCourseRole(courseId);
+      return role === "super_admin" || role === "lecturer";
+    },
+    [getCourseRole],
+  );
 
   return {
     ...state,
-
     isSuperAdmin,
-
     getCourseRole,
     canSeeCourse,
-
     canEditCourse,
     canManageStudents,
     canManageAttendance,
     canManageGrades,
-
-    canCreateCourse,
-    canDeleteCourse,
+    canCreateCourse: isSuperAdmin,
+    canDeleteCourse: isSuperAdmin,
   };
 }

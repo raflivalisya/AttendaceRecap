@@ -21,49 +21,8 @@ export type CourseMembership = {
   created_at: string;
 };
 
-export const ROLE_LABEL: Record<
-  AppRole,
-  string
-> = {
-  super_admin:
-    "Super Admin",
-
-  lecturer:
-    "Dosen",
-
-  assistant:
-    "Asisten Dosen",
+export const ROLE_LABEL: Record<AppRole, string> = {
+  super_admin: "Super Admin",
+  lecturer: "Dosen",
+  assistant: "Asisten Dosen",
 };
-
-export function isSuperAdmin(
-  role?: AppRole | null
-) {
-  return (
-    role ===
-    "super_admin"
-  );
-}
-
-export function canManageGrades(
-  role?: AppRole | null
-) {
-  return (
-    role ===
-      "super_admin" ||
-    role ===
-      "lecturer"
-  );
-}
-
-export function canManageAttendance(
-  role?: AppRole | null
-) {
-  return (
-    role ===
-      "super_admin" ||
-    role ===
-      "lecturer" ||
-    role ===
-      "assistant"
-  );
-}
