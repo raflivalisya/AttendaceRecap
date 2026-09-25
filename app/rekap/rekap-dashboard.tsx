@@ -4,6 +4,7 @@ import { buildAttendanceMap, formatShortDate, getHeldMeetingIds, getStudentRecap
 import { buildGradeMap, calculateFinalScore } from "@/lib/grades";
 import type { Assessment, Attendance, Course, Grade, Meeting, Student } from "@/lib/types";
 import { useMemo, useState } from "react";
+import PrintAttendance from "@/components/PrintAttendance";
 
 type Props = {
   courses: Course[];
@@ -152,6 +153,13 @@ function handleLecturerChange(lecturer: string) {
           <div className="stat-card"><div className="value">{avgAttendance}%</div><div className="label">Rata-rata kehadiran</div></div>
           <div className="stat-card highlight"><div className="value">{course.min_attendance_pct}%</div><div className="label">Batas minimal kehadiran</div></div>
         </div>
+
+<PrintAttendance
+  course={course}
+  students={students}
+  meetings={meetings}
+  attendance={attendance}
+/>
 
         <div className="tab-bar">
           <button className={`tab-btn ${tab === "attendance" ? "active" : ""}`} onClick={() => setTab("attendance")}>Rekap Absensi</button>

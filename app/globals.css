@@ -233,3 +233,133 @@ h1 { font-size: clamp(28px, 4vw, 42px); line-height:1.08; margin:0; letter-spaci
   .save-row .btn { width:100%; }
   .course-picker { width:100%; }
 }
+
+/* ========================================
+   CETAK ABSENSI
+======================================== */
+
+.print-button {
+  border: none;
+  background: #123f67;
+  color: white;
+  padding: 11px 18px;
+  border-radius: 9px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  margin: 16px 0;
+}
+
+.print-button:hover {
+  background: #0d3151;
+}
+
+/* Disembunyikan saat tampilan web */
+.print-attendance-area {
+  display: none;
+}
+
+/* ========================================
+   MODE PRINT
+======================================== */
+
+@media print {
+
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-attendance-area,
+  .print-attendance-area * {
+    visibility: visible;
+  }
+
+  .print-attendance-area {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    color: black;
+    font-family: Arial, sans-serif;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-title h1 {
+    text-align: center;
+    font-size: 16px;
+    margin: 0 0 10px;
+    font-weight: 700;
+  }
+
+  .print-info {
+    width: 100%;
+    margin-bottom: 10px;
+    border-collapse: collapse;
+    font-size: 9px;
+  }
+
+  .print-info td {
+    padding: 2px 5px;
+  }
+
+  .attendance-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 7px;
+  }
+
+  .attendance-print-table th,
+  .attendance-print-table td {
+    border: 1px solid #000;
+    padding: 3px 2px;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .attendance-print-table thead th {
+    font-weight: 700;
+    background: #e8e8e8 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .attendance-print-table .student-name {
+    min-width: 105px;
+    text-align: left;
+  }
+
+  .attendance-print-table th.student-name {
+    text-align: center;
+  }
+
+  .attendance-print-table .meeting-date {
+    font-size: 6px;
+    white-space: nowrap;
+  }
+
+  .attendance-print-table .status-cell {
+    font-weight: 700;
+  }
+
+  .print-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-top: 8px;
+    font-size: 8px;
+  }
+}
