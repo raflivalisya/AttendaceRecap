@@ -10,7 +10,12 @@ import ImportStudentsTxt from "@/components/admin/ImportStudentsTxt";
 import CourseByLecturer from "@/components/admin/CourseByLecturer";
 import AttendanceQR from "@/components/admin/AttendanceQR";
 import ExportGradesExcel from "@/components/admin/ExportGradesExcel";
-
+import {
+  useAdminAccess,
+} from "@/lib/auth/use-admin-access";
+import {
+  useEffect,
+} from "react";
 
 
 type Props = {
@@ -43,6 +48,8 @@ function addDays(date: string, days: number) {
 }
 
 export default function AdminPanel(props: Props) {
+  const access =
+  useAdminAccess();
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [courses, setCourses] = useState(props.initialCourses);
@@ -61,7 +68,147 @@ export default function AdminPanel(props: Props) {
   const [newName, setNewName] = useState("");
   const [newAssessment, setNewAssessment] = useState({ name: "", category: "Tugas", max_score: 100, weight: 10 });
 
-  const selectedCourse = courses.find((item) => item.id === selectedCourseId);
+const visibleCourses =
+  useMemo(
+    () => {
+      if (
+        access.loading
+      ) {
+        return [];
+      }
+
+      return courses.filter(
+        (course) =>
+          access.canSeeCourse(
+            course.id
+          )
+      );
+    },
+    [
+      courses,
+      access.loading,
+      access.canSeeCourse,
+    ]
+  );
+
+const selectedCourse =
+  visibleCourses.find(
+    (item) =>
+      item.id === selectedCourseId
+  );
+
+const selectedCourseRole =
+  selectedCourseId
+    ? access.getCourseRole(
+        selectedCourseId
+      )
+    : null;
+
+const canEditSelectedCourse =
+  selectedCourseId
+    ? access.canEditCourse(
+        selectedCourseId
+      )
+    : false;
+
+const canManageSelectedStudents =
+  selectedCourseId
+    ? access.canManageStudents(
+        selectedCourseId
+      )
+    : false;
+
+const canManageSelectedAttendance =
+  selectedCourseId
+    ? access.canManageAttendance(
+        selectedCourseId
+      )
+    : false;
+
+const canManageSelectedGrades =
+  selectedCourseId
+    ? access.canManageGrades(
+        selectedCourseId
+      )
+    : false;
+
+  /*
+   * User tidak punya kelas.
+   */
+  if (
+    visibleCourses.length ===
+    0
+  ) {
+    if (
+      selectedCourseId
+    ) {
+      setSelectedCourseId(
+        ""
+      );
+    }
+if (
+  access.loading
+) {
+  return (
+    <main className="page">
+      <div className="shell">
+        <div className="panel">
+          <div className="panel-body">
+            Memuat hak akses...
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+if (
+  access.error
+) {
+  return (
+    <main className="page">
+      <div className="shell">
+        <div className="panel">
+          <div className="panel-body">
+
+            <strong>
+              Hak akses gagal dimuat
+            </strong>
+
+            <p className="error">
+              {access.error}
+            </p>
+
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+    return;
+  }
+
+  /*
+   * Apakah kelas yang sekarang
+   * masih boleh dibuka?
+   */
+  const exists =
+    visibleCourses.some(
+      (course) =>
+        course.id ===
+        selectedCourseId
+    );
+
+  /*
+   * Kalau tidak,
+   * pilih kelas pertama.
+   */
+  if (!exists) {
+    setSelectedCourseId(
+      visibleCourses[0].id
+    );
+  }
+
   const courseStudents = useMemo(() => students.filter((item) => item.course_id === selectedCourseId).sort((a, b) => a.npm.localeCompare(b.npm)), [students, selectedCourseId]);
   const courseMeetings = useMemo(() => meetings.filter((item) => item.course_id === selectedCourseId).sort((a, b) => a.meeting_no - b.meeting_no), [meetings, selectedCourseId]);
   const courseAssessments = useMemo(() => assessments.filter((item) => item.course_id === selectedCourseId).sort((a, b) => a.sort_order - b.sort_order), [assessments, selectedCourseId]);
@@ -326,10 +473,56 @@ async function refreshAttendance() {
   return <section className="page"><div className="shell">
     <div className="hero"><div><div className="eyebrow">Panel Administrator</div><h1>Kelola Kelas, Absensi & Nilai</h1><p>Tambahkan mata kuliah apa pun, kelola mahasiswa, presensi, dan komponen penilaian dari satu tempat.</p></div><div className="admin-actions"><span className="badge neutral">{props.adminEmail}</span><button className="btn btn-secondary" onClick={logout}>Keluar</button></div></div>
     {message && <div className={message.toLowerCase().includes("gagal") || message.toLowerCase().includes("harus") || message.toLowerCase().includes("lengkapi") ? "error" : "success"} style={{ marginBottom: 14 }}>{message}</div>}
+<div
+  style={{
+    display:
+      "flex",
 
+    alignItems:
+      "center",
+
+    gap:
+      8,
+  }}
+>
+  <strong>
+    {access.displayName}
+  </strong>
+
+  <span
+    style={{
+      padding:
+        "5px 10px",
+
+      borderRadius:
+        999,
+
+      background:
+        "#e0f2fe",
+
+      color:
+        "#0369a1",
+
+      fontSize:
+        12,
+
+      fontWeight:
+        700,
+    }}
+  >
+    {access.isSuperAdmin
+      ? "Super Admin"
+
+      : access.profileRole ===
+          "assistant"
+        ? "Asisten Dosen"
+
+        : "Dosen"}
+  </span>
+</div>
     <div className="course-admin-layout">
       <aside className="panel course-sidebar"><div className="panel-head"><div><h2>Daftar Kelas</h2><p>{courses.length} kelas dikelola</p></div><button className="icon-btn" onClick={() => setShowAddCourse((v) => !v)}>＋</button></div>
-        <div className="panel-body course-list">{courses.map((course) => <button key={course.id} className={`course-btn ${selectedCourseId === course.id ? "active" : ""}`} onClick={() => chooseCourse(course.id)}><strong>{course.name}</strong><span>{course.class_name} · {course.lecturer}</span></button>)}{courses.length === 0 && <p className="muted">Belum ada kelas.</p>}</div>
+        <div className="panel-body course-list">{visibleCourses.map((course) => <button key={course.id} className={`course-btn ${selectedCourseId === course.id ? "active" : ""}`} onClick={() => chooseCourse(course.id)}><strong>{course.name}</strong><span>{course.class_name} · {course.lecturer}</span></button>)}{courses.length === 0 && <p className="muted">Belum ada kelas.</p>}</div>
       </aside>
 
       <div className="admin-main">
