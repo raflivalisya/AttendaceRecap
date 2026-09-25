@@ -18,7 +18,7 @@ export const dynamic =
 export const runtime =
   "nodejs";
 
-function getQrSecret() {
+function getSecret() {
   const secret =
     process.env
       .QR_SIGNING_SECRET;
@@ -32,14 +32,14 @@ function getQrSecret() {
   return secret;
 }
 
-function signPayload(
-  payload: string
+function sign(
+  value: string
 ) {
   return createHmac(
     "sha256",
-    getQrSecret()
+    getSecret()
   )
-    .update(payload)
+    .update(value)
     .digest("base64url");
 }
 
@@ -54,7 +54,9 @@ export async function GET(
           "sessionId"
         );
 
-    if (!sessionId) {
+    if (
+      !sessionId
+    ) {
       return NextResponse.json(
         {
           success:
@@ -69,7 +71,7 @@ export async function GET(
 
           headers: {
             "Cache-Control":
-              "no-store, max-age=0",
+              "no-store, no-cache, must-revalidate",
           },
         }
       );
@@ -82,14 +84,10 @@ export async function GET(
       data: {
         user,
       },
-
-      error:
-        userError,
     } =
       await supabase.auth.getUser();
 
     if (
-      userError ||
       !user
     ) {
       return NextResponse.json(
@@ -98,16 +96,11 @@ export async function GET(
             false,
 
           message:
-            "Anda belum login sebagai admin.",
+            "Admin belum login.",
         },
         {
           status:
             401,
-
-          headers: {
-            "Cache-Control":
-              "no-store, max-age=0",
-          },
         }
       );
     }
@@ -125,7 +118,6 @@ export async function GET(
         `
         id,
         token,
-        starts_at,
         ends_at,
         is_active
         `
@@ -140,27 +132,17 @@ export async function GET(
       error ||
       !session
     ) {
-      console.error(
-        "QR SESSION QUERY:",
-        error
-      );
-
       return NextResponse.json(
         {
           success:
             false,
 
           message:
-            "Session presensi tidak ditemukan.",
+            "Session tidak ditemukan.",
         },
         {
           status:
             404,
-
-          headers: {
-            "Cache-Control":
-              "no-store, max-age=0",
-          },
         }
       );
     }
@@ -179,11 +161,6 @@ export async function GET(
         {
           status:
             410,
-
-          headers: {
-            "Cache-Control":
-              "no-store, max-age=0",
-          },
         }
       );
     }
@@ -197,11 +174,8 @@ export async function GET(
       ).getTime();
 
     if (
-      !Number.isFinite(
-        sessionEnd
-      ) ||
       now >=
-        sessionEnd
+      sessionEnd
     ) {
       return NextResponse.json(
         {
@@ -209,23 +183,23 @@ export async function GET(
             false,
 
           message:
-            "Waktu presensi sudah berakhir.",
+            "Waktu presensi telah berakhir.",
         },
         {
           status:
             410,
-
-          headers: {
-            "Cache-Control":
-              "no-store, max-age=0",
-          },
         }
       );
     }
 
     /*
-     * QR berlaku maksimal
-     * sekitar 35 detik.
+     * QR berlaku 30 detik.
+     *
+     * Frontend memperbarui QR
+     * setiap 20 detik.
+     *
+     * Jadi QR baru muncul sebelum
+     * QR lama expired.
      */
     const issuedAt =
       now;
@@ -233,7 +207,7 @@ export async function GET(
     const expiresAt =
       Math.min(
         now +
-          35_000,
+          30_000,
 
         sessionEnd
       );
@@ -253,7 +227,7 @@ export async function GET(
       `${nonce}`;
 
     const signature =
-      signPayload(
+      sign(
         payload
       );
 
@@ -275,13 +249,19 @@ export async function GET(
       {
         headers: {
           "Cache-Control":
-            "no-store, max-age=0",
+            "no-store, no-cache, must-revalidate, proxy-revalidate",
+
+          Pragma:
+            "no-cache",
+
+          Expires:
+            "0",
         },
       }
     );
   } catch (error) {
     console.error(
-      "DYNAMIC QR API ERROR:",
+      "QR API ERROR:",
       error
     );
 
@@ -291,16 +271,11 @@ export async function GET(
           false,
 
         message:
-          "Gagal membuat QR dinamis.",
+          "Gagal membuat QR.",
       },
       {
         status:
           500,
-
-        headers: {
-          "Cache-Control":
-            "no-store, max-age=0",
-        },
       }
     );
   }

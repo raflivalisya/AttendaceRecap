@@ -196,11 +196,14 @@ export async function POST(
           ""
       ).trim();
 
-    const deviceId =
-      String(
-        body.deviceId ??
-          ""
-      ).trim();
+      
+const deviceId =
+  request.cookies
+    .get(
+      "presensi_device_id"
+    )
+    ?.value ??
+  "";
 
     /*
      * TICKET SEKARANG DARI COOKIE,

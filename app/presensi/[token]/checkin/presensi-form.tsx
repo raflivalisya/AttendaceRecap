@@ -27,88 +27,7 @@ type LocationData = {
   accuracy: number;
 };
 
-function createDeviceId() {
-  try {
-    if (
-      window.crypto &&
-      typeof window.crypto.randomUUID ===
-        "function"
-    ) {
-      return window.crypto.randomUUID();
-    }
-
-    if (
-      window.crypto &&
-      typeof window.crypto.getRandomValues ===
-        "function"
-    ) {
-      const values =
-        new Uint32Array(4);
-
-      window.crypto
-        .getRandomValues(
-          values
-        );
-
-      return Array.from(
-        values
-      )
-        .map(
-          (value) =>
-            value.toString(16)
-        )
-        .join("-");
-    }
-  } catch {
-    // fallback
-  }
-
-  return (
-    Date.now().toString(36) +
-    "-" +
-    Math.random()
-      .toString(36)
-      .slice(2) +
-    "-" +
-    Math.random()
-      .toString(36)
-      .slice(2)
-  );
-}
-
-function getDeviceId() {
-  const key =
-    "attendance_device_id";
-
-  try {
-    const stored =
-      window.localStorage
-        .getItem(key);
-
-    if (stored) {
-      return stored;
-    }
-  } catch {
-    // Safari
-  }
-
-  const id =
-    createDeviceId();
-
-  try {
-    window.localStorage
-      .setItem(
-        key,
-        id
-      );
-  } catch {
-    // abaikan
-  }
-
-  return id;
-}
-
-function getLocation():
+function readLocation():
   Promise<LocationData> {
   return new Promise(
     (
@@ -116,11 +35,13 @@ function getLocation():
       reject
     ) => {
       if (
+        typeof navigator ===
+          "undefined" ||
         !navigator.geolocation
       ) {
         reject(
           new Error(
-            "Browser tidak mendukung lokasi GPS."
+            "Browser tidak mendukung akses lokasi."
           )
         );
 
@@ -134,15 +55,18 @@ function getLocation():
           ) => {
             resolve({
               latitude:
-                position.coords
+                position
+                  .coords
                   .latitude,
 
               longitude:
-                position.coords
+                position
+                  .coords
                   .longitude,
 
               accuracy:
-                position.coords
+                position
+                  .coords
                   .accuracy,
             });
           },
@@ -152,7 +76,7 @@ function getLocation():
           ) => {
             if (
               error.code ===
-              1
+              error.PERMISSION_DENIED
             ) {
               reject(
                 new Error(
@@ -165,11 +89,11 @@ function getLocation():
 
             if (
               error.code ===
-              2
+              error.POSITION_UNAVAILABLE
             ) {
               reject(
                 new Error(
-                  "Lokasi tidak tersedia. Aktifkan GPS."
+                  "Lokasi tidak tersedia. Pastikan GPS aktif."
                 )
               );
 
@@ -178,7 +102,7 @@ function getLocation():
 
             if (
               error.code ===
-              3
+              error.TIMEOUT
             ) {
               reject(
                 new Error(
@@ -222,8 +146,8 @@ export default function PresensiForm({
     useState("");
 
   const [
-    sending,
-    setSending,
+    loading,
+    setLoading,
   ] =
     useState(false);
 
@@ -251,9 +175,9 @@ export default function PresensiForm({
       null
     );
 
-  async function submitPresensi() {
+  async function kirimPresensi() {
     if (
-      sending
+      loading
     ) {
       return;
     }
@@ -271,129 +195,184 @@ export default function PresensiForm({
       return;
     }
 
-    setSending(true);
-    setSuccess(false);
-    setDetail(null);
+    setLoading(
+      true
+    );
+
+    setSuccess(
+      false
+    );
+
+    setDetail(
+      null
+    );
 
     try {
-      const deviceId =
-        getDeviceId();
+      /*
+       * ====================================
+       * GPS
+       * ====================================
+       */
 
       setMessage(
-        "Memeriksa lokasi..."
+        "Meminta lokasi GPS..."
       );
 
       const location =
-        await getLocation();
+        await readLocation();
 
       setMessage(
         `Lokasi ditemukan. Akurasi ±${Math.round(
           location.accuracy
-        )} meter.`
+        )} meter. Mengirim presensi...`
       );
 
-      const response =
-        await fetch(
-          `/api/presensi/${encodeURIComponent(
-            token
-          )}`,
-          {
-            method:
-              "POST",
+      /*
+       * ====================================
+       * SEND
+       * ====================================
+       */
 
-            cache:
-              "no-store",
+      const controller =
+        new AbortController();
 
-            /*
-             * Explicit supaya cookie
-             * dikirim pada Safari.
-             */
-            credentials:
-              "same-origin",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-
-              Accept:
-                "application/json",
-            },
-
-            body:
-              JSON.stringify({
-                npm:
-                  cleanNpm,
-
-                deviceId,
-
-                latitude:
-                  location.latitude,
-
-                longitude:
-                  location.longitude,
-
-                accuracy:
-                  location.accuracy,
-              }),
-          }
+      const timeout =
+        window.setTimeout(
+          () => {
+            controller.abort();
+          },
+          20000
         );
-
-      const responseText =
-        await response.text();
-
-      let result:
-        any = {};
 
       try {
-        result =
-          JSON.parse(
-            responseText
+        const response =
+          await fetch(
+            `/api/presensi/${encodeURIComponent(
+              token
+            )}`,
+            {
+              method:
+                "POST",
+
+              cache:
+                "no-store",
+
+              /*
+               * WAJIB agar Safari
+               * mengirim HttpOnly cookie.
+               */
+              credentials:
+                "include",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+
+                Accept:
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  npm:
+                    cleanNpm,
+
+                  latitude:
+                    location.latitude,
+
+                  longitude:
+                    location.longitude,
+
+                  accuracy:
+                    location.accuracy,
+                }),
+
+              signal:
+                controller.signal,
+            }
           );
-      } catch {
-        throw new Error(
-          "Response server tidak valid."
-        );
-      }
 
-      if (
-        !response.ok
-      ) {
-        throw new Error(
+        const raw =
+          await response.text();
+
+        let result:
+          any = {};
+
+        try {
+          result =
+            JSON.parse(
+              raw
+            );
+        } catch {
+          console.error(
+            "SERVER RESPONSE:",
+            raw
+          );
+
+          throw new Error(
+            "Respons server tidak valid."
+          );
+        }
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            result.message ||
+              `Presensi gagal (${response.status}).`
+          );
+        }
+
+        setSuccess(
+          true
+        );
+
+        setMessage(
           result.message ||
-            `Presensi gagal (${response.status}).`
+            "Presensi berhasil."
+        );
+
+        setDetail({
+          name:
+            result.student
+              ?.name,
+
+          distance:
+            result.distance,
+
+          accuracy:
+            result.accuracy,
+        });
+      } finally {
+        window.clearTimeout(
+          timeout
         );
       }
-
-      setSuccess(true);
-
-      setMessage(
-        result.message
-      );
-
-      setDetail({
-        name:
-          result.student
-            ?.name,
-
-        distance:
-          result.distance,
-
-        accuracy:
-          result.accuracy,
-      });
     } catch (
       error: any
     ) {
       console.error(
+        "PRESENSI ERROR:",
         error
       );
 
-      setMessage(
-        error?.message ||
-          "Presensi gagal."
-      );
+      if (
+        error?.name ===
+        "AbortError"
+      ) {
+        setMessage(
+          "Server terlalu lama merespons. Coba kembali."
+        );
+      } else {
+        setMessage(
+          error?.message ||
+            "Presensi gagal."
+        );
+      }
     } finally {
-      setSending(false);
+      setLoading(
+        false
+      );
     }
   }
 
@@ -401,6 +380,7 @@ export default function PresensiForm({
     <section className="page">
       <div
         className="shell"
+
         style={{
           width:
             "100%",
@@ -435,6 +415,7 @@ export default function PresensiForm({
 
         <div className="panel">
           <div className="panel-body">
+
             <p>
               <strong>
                 Kelas:
@@ -455,64 +436,75 @@ export default function PresensiForm({
 
             <div
               style={{
-                padding:
-                  14,
-
                 marginTop:
                   14,
 
                 marginBottom:
                   20,
 
-                background:
-                  "#f1f5f9",
+                padding:
+                  14,
 
                 borderRadius:
                   10,
+
+                background:
+                  "#f1f5f9",
               }}
             >
               📍{" "}
+
               <strong>
                 Universitas Teknokrat Indonesia
               </strong>
 
               <br />
 
-              Radius{" "}
+              Radius maksimal{" "}
+
               {
                 initialInfo.radiusMeters
               }{" "}
+
               meter
             </div>
 
             {!success && (
               <>
                 <div className="field">
-                  <label>
+                  <label
+                    htmlFor="student-npm"
+                  >
                     NPM
                   </label>
 
                   <input
+                    id="student-npm"
+
                     type="text"
 
                     className="input"
 
-                    value={npm}
+                    value={
+                      npm
+                    }
 
                     onChange={(
                       event
-                    ) =>
+                    ) => {
                       setNpm(
-                        event.target.value
-                      )
-                    }
+                        event.currentTarget.value
+                      );
+                    }}
+
+                    placeholder="Masukkan NPM"
 
                     inputMode="numeric"
 
                     autoComplete="off"
 
                     disabled={
-                      sending
+                      loading
                     }
 
                     style={{
@@ -527,26 +519,38 @@ export default function PresensiForm({
 
                   className="btn btn-primary"
 
-                  onClick={() => {
-                    void submitPresensi();
-                  }}
-
                   disabled={
-                    sending
+                    loading
                   }
 
+                  onClick={() => {
+                    void kirimPresensi();
+                  }}
+
                   style={{
+                    display:
+                      "block",
+
                     width:
                       "100%",
+
+                    minHeight:
+                      52,
 
                     marginTop:
                       16,
 
-                    minHeight:
-                      48,
+                    cursor:
+                      "pointer",
+
+                    touchAction:
+                      "manipulation",
+
+                    WebkitAppearance:
+                      "none",
                   }}
                 >
-                  {sending
+                  {loading
                     ? "Memeriksa..."
                     : "Kirim Presensi"}
                 </button>
@@ -556,12 +560,16 @@ export default function PresensiForm({
             {success && (
               <div
                 className="success"
+
                 style={{
                   marginTop:
                     16,
 
                   padding:
                     16,
+
+                  borderRadius:
+                    10,
                 }}
               >
                 <strong>
@@ -569,7 +577,12 @@ export default function PresensiForm({
                 </strong>
 
                 {detail?.name && (
-                  <div>
+                  <div
+                    style={{
+                      marginTop:
+                        8,
+                    }}
+                  >
                     {
                       detail.name
                     }
@@ -579,9 +592,22 @@ export default function PresensiForm({
                 {typeof detail?.distance ===
                   "number" && (
                   <div>
-                    Jarak:{" "}
+                    Jarak dari kampus:{" "}
+
                     {
                       detail.distance
+                    }{" "}
+
+                    meter
+                  </div>
+                )}
+
+                {typeof detail?.accuracy ===
+                  "number" && (
+                  <div>
+                    Akurasi GPS: ±
+                    {
+                      detail.accuracy
                     }{" "}
                     meter
                   </div>
@@ -596,12 +622,16 @@ export default function PresensiForm({
                     ? "success"
                     : "error"
                 }
+
                 style={{
                   marginTop:
-                    15,
+                    16,
 
                   padding:
                     12,
+
+                  borderRadius:
+                    8,
                 }}
               >
                 {
@@ -609,6 +639,7 @@ export default function PresensiForm({
                 }
               </div>
             )}
+
           </div>
         </div>
       </div>

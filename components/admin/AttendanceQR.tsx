@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -43,33 +44,51 @@ type Session = {
   require_location: boolean;
 };
 
+const QR_REFRESH_MS =
+  20_000;
+
 function makeSessionToken() {
   try {
     if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
+      typeof window !== "undefined" &&
+      window.crypto
     ) {
-      return crypto
-        .randomUUID()
-        .replace(/-/g, "");
-    }
+      if (
+        typeof window.crypto.randomUUID ===
+        "function"
+      ) {
+        return window.crypto
+          .randomUUID()
+          .replace(
+            /-/g,
+            ""
+          );
+      }
 
-    if (
-      typeof crypto !== "undefined" &&
-      typeof crypto.getRandomValues === "function"
-    ) {
-      const values =
-        new Uint32Array(4);
+      if (
+        typeof window.crypto.getRandomValues ===
+        "function"
+      ) {
+        const values =
+          new Uint32Array(
+            4
+          );
 
-      crypto.getRandomValues(
-        values
-      );
+        window.crypto.getRandomValues(
+          values
+        );
 
-      return Array.from(values)
-        .map((value) =>
-          value.toString(16)
+        return Array.from(
+          values
         )
-        .join("");
+          .map(
+            (value) =>
+              value.toString(
+                16
+              )
+          )
+          .join("");
+      }
     }
   } catch {
     // fallback
@@ -94,7 +113,8 @@ export default function AttendanceQR({
 }: Props) {
   const supabase =
     useMemo(
-      () => createClient(),
+      () =>
+        createClient(),
       []
     );
 
@@ -110,15 +130,17 @@ export default function AttendanceQR({
     duration,
     setDuration,
   ] =
-    useState(15);
+    useState<number>(
+      15
+    );
 
-const [
-  radius,
-  setRadius,
-] =
-  useState<number>(
-    CAMPUS_LOCATION.defaultRadius
-  );
+  const [
+    radius,
+    setRadius,
+  ] =
+    useState<number>(
+      CAMPUS_LOCATION.defaultRadius
+    );
 
   const [
     qrCode,
@@ -152,17 +174,20 @@ const [
   ] =
     useState("");
 
-  /*
-   * Load session QR aktif
-   * ketika meeting berubah.
-   */
-  useEffect(() => {
-    void loadSession();
-  }, [meetingId]);
+  const qrTimeoutRef =
+    useRef<
+      ReturnType<typeof setTimeout>
+      | null
+    >(
+      null
+    );
 
   /*
-   * Timer countdown.
+   * ========================================
+   * CLOCK
+   * ========================================
    */
+
   useEffect(() => {
     const timer =
       window.setInterval(
@@ -182,55 +207,94 @@ const [
   }, []);
 
   /*
-   * QR otomatis diperbarui
-   * setiap 30 detik.
+   * ========================================
+   * LOAD ACTIVE SESSION
+   * ========================================
    */
+
   useEffect(() => {
-    if (!session?.id) {
+    void loadSession();
+  }, [meetingId]);
+
+  /*
+   * ========================================
+   * DYNAMIC QR
+   *
+   * Tidak lagi memakai setInterval tetap.
+   * Setelah QR berhasil dibuat, QR berikutnya
+   * dijadwalkan 20 detik kemudian.
+   * ========================================
+   */
+
+  useEffect(() => {
+    if (
+      !session?.id
+    ) {
       setQrCode("");
       setQrExpiresAt(0);
 
       return;
     }
 
-    let cancelled =
-      false;
+    let active =
+      true;
 
-    async function fetchQr() {
+    async function refreshQr() {
+      if (
+        !active ||
+        !session
+      ) {
+        return;
+      }
+
       try {
         const response =
           await fetch(
             `/api/admin/presensi/qr?sessionId=${encodeURIComponent(
-              session!.id
-            )}`,
+              session.id
+            )}&t=${Date.now()}`,
             {
-              cache: "no-store",
+              method:
+                "GET",
+
+              cache:
+                "no-store",
+
+              headers: {
+                Accept:
+                  "application/json",
+              },
             }
           );
 
         const result =
           await response.json();
 
-        if (cancelled) {
+        if (
+          !active
+        ) {
           return;
         }
 
-        if (!response.ok) {
+        if (
+          !response.ok
+        ) {
           setMessage(
             result.message ||
-              "Gagal membuat QR."
+              "Gagal memperbarui QR."
           );
 
-          if (
-            response.status ===
-            410
-          ) {
-            setSession(
-              null
+          /*
+           * Coba lagi 5 detik
+           * kalau request gagal.
+           */
+          qrTimeoutRef.current =
+            window.setTimeout(
+              () => {
+                void refreshQr();
+              },
+              5000
             );
-
-            setQrCode("");
-          }
 
           return;
         }
@@ -244,6 +308,19 @@ const [
             result.expiresAt
           )
         );
+
+        setMessage("");
+
+        /*
+         * Refresh lagi 20 detik.
+         */
+        qrTimeoutRef.current =
+          window.setTimeout(
+            () => {
+              void refreshQr();
+            },
+            QR_REFRESH_MS
+          );
       } catch (error) {
         console.error(
           "QR REFRESH ERROR:",
@@ -251,42 +328,87 @@ const [
         );
 
         if (
-          !cancelled
+          !active
         ) {
-          setMessage(
-            "Gagal memperbarui QR."
-          );
+          return;
         }
+
+        setMessage(
+          "Koneksi QR terputus. Mencoba kembali..."
+        );
+
+        qrTimeoutRef.current =
+          window.setTimeout(
+            () => {
+              void refreshQr();
+            },
+            5000
+          );
       }
     }
 
     /*
      * Buat QR pertama.
      */
-    void fetchQr();
+    void refreshQr();
 
     /*
-     * Auto refresh.
+     * Kalau tab kembali aktif,
+     * langsung refresh QR.
      */
-    const interval =
-      window.setInterval(
-        () => {
-          void fetchQr();
-        },
-        60_000
-      );
+    function handleVisibility() {
+      if (
+        document.visibilityState ===
+        "visible"
+      ) {
+        if (
+          qrTimeoutRef.current
+        ) {
+          window.clearTimeout(
+            qrTimeoutRef.current
+          );
+        }
+
+        void refreshQr();
+      }
+    }
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibility
+    );
 
     return () => {
-      cancelled = true;
+      active =
+        false;
 
-      window.clearInterval(
-        interval
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibility
       );
+
+      if (
+        qrTimeoutRef.current
+      ) {
+        window.clearTimeout(
+          qrTimeoutRef.current
+        );
+      }
     };
-  }, [session?.id]);
+  }, [
+    session?.id,
+  ]);
+
+  /*
+   * ========================================
+   * LOAD SESSION
+   * ========================================
+   */
 
   async function loadSession() {
-    if (!meetingId) {
+    if (
+      !meetingId
+    ) {
       return;
     }
 
@@ -324,9 +446,11 @@ const [
       .limit(1)
       .maybeSingle();
 
-    if (error) {
+    if (
+      error
+    ) {
       console.error(
-        "LOAD QR SESSION ERROR:",
+        "LOAD SESSION ERROR:",
         error
       );
 
@@ -342,14 +466,24 @@ const [
     );
   }
 
+  /*
+   * ========================================
+   * OPEN SESSION
+   * ========================================
+   */
+
   async function openSession() {
-    setLoading(true);
-    setMessage("");
+    setLoading(
+      true
+    );
+
+    setMessage(
+      ""
+    );
 
     try {
       /*
-       * Tutup session lama
-       * di pertemuan yang sama.
+       * Tutup sesi sebelumnya.
        */
       const {
         error:
@@ -371,7 +505,9 @@ const [
           true
         );
 
-      if (closeError) {
+      if (
+        closeError
+      ) {
         throw closeError;
       }
 
@@ -389,12 +525,15 @@ const [
       const {
         data:
           userData,
+
         error:
           userError,
       } =
         await supabase.auth.getUser();
 
-      if (userError) {
+      if (
+        userError
+      ) {
         throw userError;
       }
 
@@ -402,14 +541,10 @@ const [
         !userData.user
       ) {
         throw new Error(
-          "Session admin tidak ditemukan. Silakan login kembali."
+          "Admin belum login."
         );
       }
 
-      /*
-       * Tidak mengambil GPS dosen.
-       * Lokasi selalu kampus.
-       */
       const {
         data,
         error,
@@ -425,35 +560,28 @@ const [
             makeSessionToken(),
 
           starts_at:
-            start
-              .toISOString(),
+            start.toISOString(),
 
           ends_at:
-            end
-              .toISOString(),
+            end.toISOString(),
 
           is_active:
             true,
 
           created_by:
-            userData
-              .user
-              .id,
+            userData.user.id,
 
           latitude:
-            CAMPUS_LOCATION
-              .latitude,
+            CAMPUS_LOCATION.latitude,
 
           longitude:
-            CAMPUS_LOCATION
-              .longitude,
+            CAMPUS_LOCATION.longitude,
 
           radius_meters:
             radius,
 
           max_accuracy_m:
-            CAMPUS_LOCATION
-              .maxAccuracy,
+            CAMPUS_LOCATION.maxAccuracy,
 
           require_location:
             true,
@@ -461,41 +589,50 @@ const [
         .select("*")
         .single();
 
-      if (error) {
+      if (
+        error
+      ) {
         throw error;
       }
 
       setSession(
         data as Session
       );
-
-      setMessage(
-        `Absensi dibuka. Lokasi: ${CAMPUS_LOCATION.name}. Radius ${radius} meter. QR berganti otomatis setiap 30 detik.`
-      );
     } catch (
       error: any
     ) {
       console.error(
-        "OPEN QR ERROR:",
+        "OPEN SESSION ERROR:",
         error
       );
 
       setMessage(
         error?.message ||
-          "Gagal membuka sesi QR."
+          "Gagal membuka QR."
       );
     } finally {
-      setLoading(false);
+      setLoading(
+        false
+      );
     }
   }
 
+  /*
+   * ========================================
+   * CLOSE SESSION
+   * ========================================
+   */
+
   async function closeSession() {
-    if (!session) {
+    if (
+      !session
+    ) {
       return;
     }
 
-    setLoading(true);
-    setMessage("");
+    setLoading(
+      true
+    );
 
     try {
       const {
@@ -513,7 +650,9 @@ const [
           session.id
         );
 
-      if (error) {
+      if (
+        error
+      ) {
         throw error;
       }
 
@@ -521,54 +660,66 @@ const [
         null
       );
 
-      setQrCode("");
+      setQrCode(
+        ""
+      );
 
       setQrExpiresAt(
         0
       );
-
-      setMessage(
-        "Presensi QR ditutup."
-      );
     } catch (
       error: any
     ) {
-      console.error(
-        "CLOSE QR ERROR:",
-        error
-      );
-
       setMessage(
         error?.message ||
-          "Gagal menutup presensi."
+          "Gagal menutup absensi."
       );
     } finally {
-      setLoading(false);
+      setLoading(
+        false
+      );
     }
   }
+
+  /*
+   * ========================================
+   * QR URL
+   *
+   * PENTING:
+   * QR langsung menuju SERVER SCAN.
+   * ========================================
+   */
 
   const qrUrl =
     typeof window !==
       "undefined" &&
     session &&
     qrCode
-      ? `${window.location.origin}/presensi/${session.token}?code=${encodeURIComponent(
+      ? `${window.location.origin}/api/presensi/scan/${encodeURIComponent(
+          session.token
+        )}?code=${encodeURIComponent(
           qrCode
         )}`
       : "";
 
-  const qrCountdown =
-    Math.max(
-      0,
-      Math.ceil(
-        (
-          qrExpiresAt -
-          now
-        ) / 1000
-      )
-    );
+  /*
+   * ========================================
+   * COUNTDOWN
+   * ========================================
+   */
 
-  const sessionSecondsRemaining =
+  const qrCountdown =
+    qrExpiresAt >
+    now
+      ? Math.ceil(
+          (
+            qrExpiresAt -
+            now
+          ) / 1000
+        )
+      : 0;
+
+  const sessionRemaining =
     session
       ? Math.max(
           0,
@@ -585,17 +736,22 @@ const [
 
   const sessionMinutes =
     Math.floor(
-      sessionSecondsRemaining /
+      sessionRemaining /
         60
     );
 
   const sessionSeconds =
-    sessionSecondsRemaining %
+    sessionRemaining %
     60;
+
+  /*
+   * ========================================
+   * UI
+   * ========================================
+   */
 
   return (
     <div
-      className="attendance-qr"
       style={{
         border:
           "1px solid #e2e8f0",
@@ -609,195 +765,174 @@ const [
         marginBottom:
           20,
 
-        background:
-          "#f8fafc",
-
         width:
           "100%",
+
+        background:
+          "#f8fafc",
       }}
     >
+      <strong>
+        QR Presensi Aman
+      </strong>
+
       <div
+        className="muted"
         style={{
-          display:
-            "flex",
-
-          justifyContent:
-            "space-between",
-
-          alignItems:
-            "flex-end",
-
-          gap:
-            16,
-
-          flexWrap:
-            "wrap",
+          marginTop:
+            6,
         }}
       >
-        <div>
-          <strong>
-            QR Presensi Aman
-          </strong>
+        {courseName}
+        {" — "}
+        {classLabel}
 
-          <div
-            className="muted"
-            style={{
-              marginTop:
-                5,
-            }}
-          >
-            {courseName}
-            {" — "}
-            {classLabel}
+        <br />
 
-            <br />
+        Pertemuan{" "}
+        {meetingNo}
 
-            Pertemuan{" "}
-            {meetingNo}
+        <br />
 
-            <br />
-
-            📍{" "}
-            {
-              CAMPUS_LOCATION.name
-            }
-          </div>
-        </div>
-
-        {!session && (
-          <div
-            style={{
-              display:
-                "flex",
-
-              flexWrap:
-                "wrap",
-
-              gap:
-                10,
-
-              alignItems:
-                "flex-end",
-            }}
-          >
-            <div className="field">
-              <label>
-                Durasi
-              </label>
-
-              <select
-                className="select"
-                value={
-                  duration
-                }
-                onChange={(
-                  event
-                ) =>
-                  setDuration(
-                    Number(
-                      event
-                        .target
-                        .value
-                    )
-                  )
-                }
-              >
-                <option
-                  value={5}
-                >
-                  5 menit
-                </option>
-
-                <option
-                  value={10}
-                >
-                  10 menit
-                </option>
-
-                <option
-                  value={15}
-                >
-                  15 menit
-                </option>
-
-                <option
-                  value={30}
-                >
-                  30 menit
-                </option>
-
-                <option
-                  value={60}
-                >
-                  60 menit
-                </option>
-              </select>
-            </div>
-
-            <div className="field">
-  <label>
-    Radius Kampus
-  </label>
-
-  <select
-    className="select"
-    value={radius}
-    onChange={(event) => {
-      setRadius(
-        Number(event.currentTarget.value)
-      );
-    }}
-  >
-    <option value={100}>
-      100 meter
-    </option>
-
-    <option value={150}>
-      150 meter
-    </option>
-
-    <option value={200}>
-      200 meter
-    </option>
-
-    <option value={250}>
-      250 meter
-    </option>
-
-    <option value={300}>
-      300 meter
-    </option>
-
-    <option value={500}>
-      500 meter
-    </option>
-  </select>
-</div>
-
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={
-                openSession
-              }
-              disabled={
-                loading
-              }
-            >
-              {loading
-                ? "Membuka..."
-                : "Buka Absensi QR"}
-            </button>
-          </div>
-        )}
+        📍{" "}
+        {
+          CAMPUS_LOCATION.name
+        }
       </div>
+
+      {!session && (
+        <div
+          style={{
+            display:
+              "flex",
+
+            flexWrap:
+              "wrap",
+
+            gap:
+              12,
+
+            marginTop:
+              18,
+
+            alignItems:
+              "flex-end",
+          }}
+        >
+          <div className="field">
+            <label>
+              Durasi
+            </label>
+
+            <select
+              className="select"
+
+              value={
+                duration
+              }
+
+              onChange={(
+                event
+              ) => {
+                setDuration(
+                  Number(
+                    event.currentTarget.value
+                  )
+                );
+              }}
+            >
+              <option value={5}>
+                5 menit
+              </option>
+
+              <option value={10}>
+                10 menit
+              </option>
+
+              <option value={15}>
+                15 menit
+              </option>
+
+              <option value={30}>
+                30 menit
+              </option>
+            </select>
+          </div>
+
+          <div className="field">
+            <label>
+              Radius
+            </label>
+
+            <select
+              className="select"
+
+              value={
+                radius
+              }
+
+              onChange={(
+                event
+              ) => {
+                setRadius(
+                  Number(
+                    event.currentTarget.value
+                  )
+                );
+              }}
+            >
+              <option value={100}>
+                100 meter
+              </option>
+
+              <option value={150}>
+                150 meter
+              </option>
+
+              <option value={200}>
+                200 meter
+              </option>
+
+              <option value={250}>
+                250 meter
+              </option>
+
+              <option value={300}>
+                300 meter
+              </option>
+
+              <option value={500}>
+                500 meter
+              </option>
+            </select>
+          </div>
+
+          <button
+            type="button"
+
+            className="btn btn-primary"
+
+            disabled={
+              loading
+            }
+
+            onClick={() => {
+              void openSession();
+            }}
+          >
+            {loading
+              ? "Membuka..."
+              : "Buka Absensi QR"}
+          </button>
+        </div>
+      )}
 
       {session &&
         qrUrl && (
           <div
             style={{
               marginTop:
-                22,
+                24,
 
               textAlign:
                 "center",
@@ -811,27 +946,34 @@ const [
                 maxWidth:
                   310,
 
+                padding:
+                  20,
+
                 margin:
                   "0 auto",
 
                 background:
                   "#ffffff",
 
-                padding:
-                  20,
-
                 borderRadius:
                   16,
               }}
             >
               <QRCodeSVG
+                key={
+                  qrCode
+                }
+
                 value={
                   qrUrl
                 }
+
                 size={
                   280
                 }
+
                 level="H"
+
                 style={{
                   width:
                     "100%",
@@ -851,18 +993,27 @@ const [
                   800,
               }}
             >
-              QR berganti otomatis dalam{" "}
-              {qrCountdown} detik
+              QR aktif{" "}
+
+              {qrCountdown}{" "}
+
+              detik
             </div>
 
             <div
               className="muted"
+
               style={{
                 marginTop:
-                  7,
+                  8,
               }}
             >
+              QR diperbarui otomatis setiap 20 detik
+
+              <br />
+
               Sisa sesi:{" "}
+
               {sessionMinutes}:
               {String(
                 sessionSeconds
@@ -874,21 +1025,27 @@ const [
               <br />
 
               GPS wajib • radius{" "}
+
               {
                 session.radius_meters
               }{" "}
+
               meter
             </div>
 
             <button
               type="button"
+
               className="btn btn-danger"
-              onClick={
-                closeSession
-              }
+
               disabled={
                 loading
               }
+
+              onClick={() => {
+                void closeSession();
+              }}
+
               style={{
                 marginTop:
                   16,
@@ -901,20 +1058,15 @@ const [
 
       {session &&
         !qrUrl && (
-          <div
-            className="muted"
-            style={{
-              marginTop:
-                16,
-            }}
-          >
+          <p>
             Membuat QR...
-          </div>
+          </p>
         )}
 
       {message && (
         <div
-          className="muted"
+          className="error"
+
           style={{
             marginTop:
               12,

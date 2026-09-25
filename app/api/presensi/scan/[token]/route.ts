@@ -1,4 +1,8 @@
 import {
+  randomUUID,
+} from "node:crypto";
+
+import {
   createClient,
 } from "@supabase/supabase-js";
 
@@ -18,7 +22,7 @@ export const dynamic =
 export const runtime =
   "nodejs";
 
-function getAdminSupabase() {
+function getSupabase() {
   const url =
     process.env.SUPABASE_URL ||
     process.env
@@ -52,7 +56,7 @@ function getAdminSupabase() {
   );
 }
 
-function errorRedirect(
+function redirectError(
   request: NextRequest,
   token: string,
   message: string
@@ -93,13 +97,15 @@ export async function GET(
     const code =
       request.nextUrl
         .searchParams
-        .get("code");
+        .get(
+          "code"
+        );
 
     if (
       !token ||
       !code
     ) {
-      return errorRedirect(
+      return redirectError(
         request,
         token,
         "QR tidak valid."
@@ -107,7 +113,7 @@ export async function GET(
     }
 
     const supabase =
-      getAdminSupabase();
+      getSupabase();
 
     const {
       data:
@@ -137,7 +143,7 @@ export async function GET(
       error ||
       !session
     ) {
-      return errorRedirect(
+      return redirectError(
         request,
         token,
         "Sesi presensi tidak ditemukan."
@@ -147,7 +153,7 @@ export async function GET(
     if (
       !session.is_active
     ) {
-      return errorRedirect(
+      return redirectError(
         request,
         token,
         "Presensi sudah ditutup."
@@ -171,7 +177,7 @@ export async function GET(
       now <
       start
     ) {
-      return errorRedirect(
+      return redirectError(
         request,
         token,
         "Presensi belum dibuka."
@@ -182,18 +188,15 @@ export async function GET(
       now >=
       end
     ) {
-      return errorRedirect(
+      return redirectError(
         request,
         token,
         "Waktu presensi sudah berakhir."
       );
     }
 
-    /*
-     * Validasi QR dinamis.
-     */
-    const validQr =
-      verifyDynamicQr(
+    if (
+      !verifyDynamicQr(
         {
           id:
             session.id,
@@ -203,12 +206,9 @@ export async function GET(
         },
 
         code
-      );
-
-    if (
-      !validQr
+      )
     ) {
-      return errorRedirect(
+      return redirectError(
         request,
         token,
         "QR sudah kedaluwarsa. Scan QR terbaru."
@@ -216,8 +216,11 @@ export async function GET(
     }
 
     /*
-     * Buat ticket stabil.
+     * ======================================
+     * CHECKIN TICKET
+     * ======================================
      */
+
     const ticket =
       createCheckinTicket(
         session.id,
@@ -226,8 +229,31 @@ export async function GET(
       );
 
     /*
-     * Redirect ke URL tanpa QR.
+     * ======================================
+     * DEVICE ID
+     *
+     * Dibuat server.
+     * Tidak menggunakan localStorage Safari.
+     * ======================================
      */
+
+    const existingDevice =
+      request.cookies
+        .get(
+          "presensi_device_id"
+        )
+        ?.value;
+
+    const deviceId =
+      existingDevice ||
+      randomUUID();
+
+    /*
+     * ======================================
+     * REDIRECT
+     * ======================================
+     */
+
     const destination =
       new URL(
         `/presensi/${encodeURIComponent(
@@ -242,8 +268,7 @@ export async function GET(
       );
 
     /*
-     * Ticket disimpan SERVER-SIDE
-     * sebagai HttpOnly cookie.
+     * Ticket 5 menit.
      */
     response.cookies.set(
       "presensi_checkin_ticket",
@@ -253,8 +278,7 @@ export async function GET(
           true,
 
         secure:
-          process.env.NODE_ENV ===
-          "production",
+          true,
 
         sameSite:
           "lax",
@@ -267,9 +291,36 @@ export async function GET(
       }
     );
 
+    /*
+     * Device ID 1 tahun.
+     */
+    response.cookies.set(
+      "presensi_device_id",
+      deviceId,
+      {
+        httpOnly:
+          true,
+
+        secure:
+          true,
+
+        sameSite:
+          "lax",
+
+        path:
+          "/",
+
+        maxAge:
+          365 *
+          24 *
+          60 *
+          60,
+      }
+    );
+
     response.headers.set(
       "Cache-Control",
-      "no-store, max-age=0"
+      "no-store, no-cache, must-revalidate"
     );
 
     return response;
@@ -279,7 +330,7 @@ export async function GET(
       error
     );
 
-    return errorRedirect(
+    return redirectError(
       request,
       "",
       "Terjadi kesalahan saat membaca QR."
