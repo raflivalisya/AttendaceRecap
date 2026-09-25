@@ -11,6 +11,10 @@ import {
 } from "qrcode.react";
 
 import {
+  CAMPUS_LOCATION,
+} from "@/lib/campus";
+
+import {
   createClient,
 } from "@/lib/supabase/client";
 
@@ -24,27 +28,63 @@ type Props = {
 type Session = {
   id: string;
   token: string;
+
   starts_at: string;
   ends_at: string;
+
   is_active: boolean;
 
-  latitude:
-    | number
-    | null;
-
-  longitude:
-    | number
-    | null;
+  latitude: number | null;
+  longitude: number | null;
 
   radius_meters: number;
+  max_accuracy_m: number;
+
   require_location: boolean;
 };
 
-type LocationData = {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-};
+function makeSessionToken() {
+  try {
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
+      return crypto
+        .randomUUID()
+        .replace(/-/g, "");
+    }
+
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.getRandomValues === "function"
+    ) {
+      const values =
+        new Uint32Array(4);
+
+      crypto.getRandomValues(
+        values
+      );
+
+      return Array.from(values)
+        .map((value) =>
+          value.toString(16)
+        )
+        .join("");
+    }
+  } catch {
+    // fallback
+  }
+
+  return (
+    Date.now().toString(36) +
+    Math.random()
+      .toString(36)
+      .slice(2) +
+    Math.random()
+      .toString(36)
+      .slice(2)
+  );
+}
 
 export default function AttendanceQR({
   meetingId,
@@ -72,17 +112,13 @@ export default function AttendanceQR({
   ] =
     useState(15);
 
-  const [
-    radius,
-    setRadius,
-  ] =
-    useState(200);
-
-  const [
-    requireLocation,
-    setRequireLocation,
-  ] =
-    useState(true);
+const [
+  radius,
+  setRadius,
+] =
+  useState<number>(
+    CAMPUS_LOCATION.defaultRadius
+  );
 
   const [
     qrCode,
@@ -100,7 +136,9 @@ export default function AttendanceQR({
     now,
     setNow,
   ] =
-    useState(Date.now());
+    useState(
+      Date.now()
+    );
 
   const [
     loading,
@@ -114,31 +152,44 @@ export default function AttendanceQR({
   ] =
     useState("");
 
+  /*
+   * Load session QR aktif
+   * ketika meeting berubah.
+   */
   useEffect(() => {
-    loadSession();
+    void loadSession();
   }, [meetingId]);
 
+  /*
+   * Timer countdown.
+   */
   useEffect(() => {
     const timer =
-      setInterval(() => {
-        setNow(
-          Date.now()
-        );
-      }, 1000);
+      window.setInterval(
+        () => {
+          setNow(
+            Date.now()
+          );
+        },
+        1000
+      );
 
-    return () =>
-      clearInterval(
+    return () => {
+      window.clearInterval(
         timer
       );
+    };
   }, []);
 
   /*
-   * AUTO REFRESH QR
+   * QR otomatis diperbarui
    * setiap 30 detik.
    */
   useEffect(() => {
     if (!session?.id) {
       setQrCode("");
+      setQrExpiresAt(0);
+
       return;
     }
 
@@ -149,25 +200,22 @@ export default function AttendanceQR({
       try {
         const response =
           await fetch(
-            `/api/admin/presensi/qr?sessionId=${session?.id}`,
+            `/api/admin/presensi/qr?sessionId=${encodeURIComponent(
+              session!.id
+            )}`,
             {
-              cache:
-                "no-store",
+              cache: "no-store",
             }
           );
 
         const result =
           await response.json();
 
-        if (
-          cancelled
-        ) {
+        if (cancelled) {
           return;
         }
 
-        if (
-          !response.ok
-        ) {
+        if (!response.ok) {
           setMessage(
             result.message ||
               "Gagal membuat QR."
@@ -180,6 +228,8 @@ export default function AttendanceQR({
             setSession(
               null
             );
+
+            setQrCode("");
           }
 
           return;
@@ -190,27 +240,46 @@ export default function AttendanceQR({
         );
 
         setQrExpiresAt(
-          result.expiresAt
+          Number(
+            result.expiresAt
+          )
         );
-      } catch {
-        setMessage(
-          "Gagal memperbarui QR."
+      } catch (error) {
+        console.error(
+          "QR REFRESH ERROR:",
+          error
         );
+
+        if (
+          !cancelled
+        ) {
+          setMessage(
+            "Gagal memperbarui QR."
+          );
+        }
       }
     }
 
-    fetchQr();
+    /*
+     * Buat QR pertama.
+     */
+    void fetchQr();
 
+    /*
+     * Auto refresh.
+     */
     const interval =
-      setInterval(
-        fetchQr,
+      window.setInterval(
+        () => {
+          void fetchQr();
+        },
         30_000
       );
 
     return () => {
       cancelled = true;
 
-      clearInterval(
+      window.clearInterval(
         interval
       );
     };
@@ -257,7 +326,12 @@ export default function AttendanceQR({
 
     if (error) {
       console.error(
+        "LOAD QR SESSION ERROR:",
         error
+      );
+
+      setMessage(
+        error.message
       );
 
       return;
@@ -268,98 +342,19 @@ export default function AttendanceQR({
     );
   }
 
-  function getLocation():
-    Promise<LocationData> {
-    return new Promise(
-      (
-        resolve,
-        reject
-      ) => {
-        if (
-          !navigator
-            .geolocation
-        ) {
-          reject(
-            new Error(
-              "Browser tidak mendukung lokasi."
-            )
-          );
-
-          return;
-        }
-
-        navigator.geolocation
-          .getCurrentPosition(
-            (position) => {
-              resolve({
-                latitude:
-                  position
-                    .coords
-                    .latitude,
-
-                longitude:
-                  position
-                    .coords
-                    .longitude,
-
-                accuracy:
-                  position
-                    .coords
-                    .accuracy,
-              });
-            },
-
-            () => {
-              reject(
-                new Error(
-                  "Lokasi tidak dapat diambil. Izinkan akses lokasi pada browser."
-                )
-              );
-            },
-
-            {
-              enableHighAccuracy:
-                true,
-
-              timeout:
-                15000,
-
-              maximumAge:
-                0,
-            }
-          );
-      }
-    );
-  }
-
   async function openSession() {
     setLoading(true);
     setMessage("");
 
     try {
-      let location:
-        | LocationData
-        | null = null;
-
       /*
-       * Lokasi dosen diambil otomatis
-       * saat tombol dibuka.
+       * Tutup session lama
+       * di pertemuan yang sama.
        */
-      if (
-        requireLocation
-      ) {
-        setMessage(
-          "Mengambil lokasi kelas..."
-        );
-
-        location =
-          await getLocation();
-      }
-
-      /*
-       * Tutup session lama.
-       */
-      await supabase
+      const {
+        error:
+          closeError,
+      } = await supabase
         .from(
           "attendance_sessions"
         )
@@ -376,6 +371,10 @@ export default function AttendanceQR({
           true
         );
 
+      if (closeError) {
+        throw closeError;
+      }
+
       const start =
         new Date();
 
@@ -387,21 +386,30 @@ export default function AttendanceQR({
               1000
         );
 
-      const token =
-        crypto
-          .randomUUID()
-          .replace(
-            /-/g,
-            ""
-          );
-
       const {
-        data: userData,
+        data:
+          userData,
+        error:
+          userError,
       } =
-        await supabase
-          .auth
-          .getUser();
+        await supabase.auth.getUser();
 
+      if (userError) {
+        throw userError;
+      }
+
+      if (
+        !userData.user
+      ) {
+        throw new Error(
+          "Session admin tidak ditemukan. Silakan login kembali."
+        );
+      }
+
+      /*
+       * Tidak mengambil GPS dosen.
+       * Lokasi selalu kampus.
+       */
       const {
         data,
         error,
@@ -413,7 +421,8 @@ export default function AttendanceQR({
           meeting_id:
             meetingId,
 
-          token,
+          token:
+            makeSessionToken(),
 
           starts_at:
             start
@@ -428,27 +437,26 @@ export default function AttendanceQR({
 
           created_by:
             userData
-              .user?.id ??
-            null,
+              .user
+              .id,
 
           latitude:
-            location
-              ?.latitude ??
-            null,
+            CAMPUS_LOCATION
+              .latitude,
 
           longitude:
-            location
-              ?.longitude ??
-            null,
+            CAMPUS_LOCATION
+              .longitude,
 
           radius_meters:
             radius,
 
           max_accuracy_m:
-            150,
+            CAMPUS_LOCATION
+              .maxAccuracy,
 
           require_location:
-            requireLocation,
+            true,
         })
         .select("*")
         .single();
@@ -462,16 +470,19 @@ export default function AttendanceQR({
       );
 
       setMessage(
-        requireLocation
-          ? `Absensi dibuka. Radius GPS ${radius} meter. QR akan berubah otomatis setiap 30 detik.`
-          : "Absensi dibuka. QR akan berubah otomatis setiap 30 detik."
+        `Absensi dibuka. Lokasi: ${CAMPUS_LOCATION.name}. Radius ${radius} meter. QR berganti otomatis setiap 30 detik.`
       );
     } catch (
       error: any
     ) {
+      console.error(
+        "OPEN QR ERROR:",
+        error
+      );
+
       setMessage(
         error?.message ||
-          "Gagal membuka QR."
+          "Gagal membuka sesi QR."
       );
     } finally {
       setLoading(false);
@@ -484,39 +495,56 @@ export default function AttendanceQR({
     }
 
     setLoading(true);
+    setMessage("");
 
-    const {
-      error,
-    } = await supabase
-      .from(
-        "attendance_sessions"
-      )
-      .update({
-        is_active:
-          false,
-      })
-      .eq(
-        "id",
-        session.id
-      );
+    try {
+      const {
+        error,
+      } = await supabase
+        .from(
+          "attendance_sessions"
+        )
+        .update({
+          is_active:
+            false,
+        })
+        .eq(
+          "id",
+          session.id
+        );
 
-    if (error) {
-      setMessage(
-        error.message
-      );
-    } else {
+      if (error) {
+        throw error;
+      }
+
       setSession(
         null
       );
 
       setQrCode("");
 
+      setQrExpiresAt(
+        0
+      );
+
       setMessage(
         "Presensi QR ditutup."
       );
-    }
+    } catch (
+      error: any
+    ) {
+      console.error(
+        "CLOSE QR ERROR:",
+        error
+      );
 
-    setLoading(false);
+      setMessage(
+        error?.message ||
+          "Gagal menutup presensi."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   const qrUrl =
@@ -533,28 +561,41 @@ export default function AttendanceQR({
     Math.max(
       0,
       Math.ceil(
-        (qrExpiresAt -
-          now) /
-          1000
+        (
+          qrExpiresAt -
+          now
+        ) / 1000
       )
     );
 
-  const sessionRemaining =
+  const sessionSecondsRemaining =
     session
       ? Math.max(
           0,
           Math.ceil(
-            (new Date(
-              session.ends_at
-            ).getTime() -
-              now) /
-              60000
+            (
+              new Date(
+                session.ends_at
+              ).getTime() -
+              now
+            ) / 1000
           )
         )
       : 0;
 
+  const sessionMinutes =
+    Math.floor(
+      sessionSecondsRemaining /
+        60
+    );
+
+  const sessionSeconds =
+    sessionSecondsRemaining %
+    60;
+
   return (
     <div
+      className="attendance-qr"
       style={{
         border:
           "1px solid #e2e8f0",
@@ -562,13 +603,17 @@ export default function AttendanceQR({
         borderRadius:
           14,
 
-        padding: 18,
+        padding:
+          18,
 
         marginBottom:
           20,
 
         background:
           "#f8fafc",
+
+        width:
+          "100%",
       }}
     >
       <div
@@ -579,7 +624,11 @@ export default function AttendanceQR({
           justifyContent:
             "space-between",
 
-          gap: 16,
+          alignItems:
+            "flex-end",
+
+          gap:
+            16,
 
           flexWrap:
             "wrap",
@@ -594,7 +643,7 @@ export default function AttendanceQR({
             className="muted"
             style={{
               marginTop:
-                4,
+                5,
             }}
           >
             {courseName}
@@ -605,6 +654,13 @@ export default function AttendanceQR({
 
             Pertemuan{" "}
             {meetingNo}
+
+            <br />
+
+            📍{" "}
+            {
+              CAMPUS_LOCATION.name
+            }
           </div>
         </div>
 
@@ -617,10 +673,11 @@ export default function AttendanceQR({
               flexWrap:
                 "wrap",
 
-              gap: 10,
+              gap:
+                10,
 
               alignItems:
-                "end",
+                "flex-end",
             }}
           >
             <div className="field">
@@ -634,11 +691,11 @@ export default function AttendanceQR({
                   duration
                 }
                 onChange={(
-                  e
+                  event
                 ) =>
                   setDuration(
                     Number(
-                      e
+                      event
                         .target
                         .value
                     )
@@ -668,100 +725,57 @@ export default function AttendanceQR({
                 >
                   30 menit
                 </option>
+
+                <option
+                  value={60}
+                >
+                  60 menit
+                </option>
               </select>
             </div>
 
             <div className="field">
-              <label>
-                Radius GPS
-              </label>
+  <label>
+    Radius Kampus
+  </label>
 
-              <select
-                className="select"
-                value={
-                  radius
-                }
-                onChange={(
-                  e
-                ) =>
-                  setRadius(
-                    Number(
-                      e
-                        .target
-                        .value
-                    )
-                  )
-                }
-                disabled={
-                  !requireLocation
-                }
-              >
-                <option
-                  value={100}
-                >
-                  100 meter
-                </option>
+  <select
+    className="select"
+    value={radius}
+    onChange={(event) => {
+      setRadius(
+        Number(event.currentTarget.value)
+      );
+    }}
+  >
+    <option value={100}>
+      100 meter
+    </option>
 
-                <option
-                  value={150}
-                >
-                  150 meter
-                </option>
+    <option value={150}>
+      150 meter
+    </option>
 
-                <option
-                  value={200}
-                >
-                  200 meter
-                </option>
+    <option value={200}>
+      200 meter
+    </option>
 
-                <option
-                  value={300}
-                >
-                  300 meter
-                </option>
+    <option value={250}>
+      250 meter
+    </option>
 
-                <option
-                  value={500}
-                >
-                  500 meter
-                </option>
-              </select>
-            </div>
+    <option value={300}>
+      300 meter
+    </option>
 
-            <label
-              style={{
-                display:
-                  "flex",
-
-                alignItems:
-                  "center",
-
-                gap: 7,
-
-                minHeight:
-                  42,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={
-                  requireLocation
-                }
-                onChange={(
-                  e
-                ) =>
-                  setRequireLocation(
-                    e
-                      .target
-                      .checked
-                  )
-                }
-              />
-
-              Wajib GPS
-            </label>
+    <option value={500}>
+      500 meter
+    </option>
+  </select>
+</div>
 
             <button
+              type="button"
               className="btn btn-primary"
               onClick={
                 openSession
@@ -783,7 +797,7 @@ export default function AttendanceQR({
           <div
             style={{
               marginTop:
-                20,
+                22,
 
               textAlign:
                 "center",
@@ -795,13 +809,13 @@ export default function AttendanceQR({
                   "100%",
 
                 maxWidth:
-                  300,
+                  310,
 
                 margin:
                   "0 auto",
 
                 background:
-                  "white",
+                  "#ffffff",
 
                 padding:
                   20,
@@ -832,62 +846,69 @@ export default function AttendanceQR({
               style={{
                 marginTop:
                   14,
+
+                fontWeight:
+                  800,
               }}
             >
-              <strong>
-                QR otomatis
-                berganti dalam{" "}
-                {qrCountdown}
-                {" "}detik
-              </strong>
+              QR berganti otomatis dalam{" "}
+              {qrCountdown} detik
             </div>
 
-            <p
+            <div
               className="muted"
               style={{
                 marginTop:
-                  5,
+                  7,
               }}
             >
-              Sisa waktu
-              presensi sekitar{" "}
-              {sessionRemaining}
-              {" "}menit
-            </p>
+              Sisa sesi:{" "}
+              {sessionMinutes}:
+              {String(
+                sessionSeconds
+              ).padStart(
+                2,
+                "0"
+              )}
 
-            {session.require_location && (
-              <p
-                className="muted"
-                style={{
-                  marginTop:
-                    4,
-                }}
-              >
-                GPS wajib •
-                radius{" "}
-                {session.radius_meters}
-                {" "}meter
-              </p>
-            )}
+              <br />
 
-            <div
+              GPS wajib • radius{" "}
+              {
+                session.radius_meters
+              }{" "}
+              meter
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={
+                closeSession
+              }
+              disabled={
+                loading
+              }
               style={{
                 marginTop:
-                  15,
+                  16,
               }}
             >
-              <button
-                className="btn btn-danger"
-                onClick={
-                  closeSession
-                }
-                disabled={
-                  loading
-                }
-              >
-                Tutup Absensi
-              </button>
-            </div>
+              Tutup Absensi
+            </button>
+          </div>
+        )}
+
+      {session &&
+        !qrUrl && (
+          <div
+            className="muted"
+            style={{
+              marginTop:
+                16,
+            }}
+          >
+            Membuat QR...
           </div>
         )}
 

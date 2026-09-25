@@ -1,11 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createHmac, randomBytes } from "node:crypto";
-import { createClient } from "@/lib/supabase/server";
+import {
+  createHmac,
+  randomBytes,
+} from "node:crypto";
 
-export const dynamic = "force-dynamic";
+import {
+  NextRequest,
+  NextResponse,
+} from "next/server";
 
-function getSecret() {
-  const secret = process.env.QR_SIGNING_SECRET;
+import {
+  createClient,
+} from "@/lib/supabase/server";
+
+export const dynamic =
+  "force-dynamic";
+
+export const runtime =
+  "nodejs";
+
+function getQrSecret() {
+  const secret =
+    process.env
+      .QR_SIGNING_SECRET;
 
   if (!secret) {
     throw new Error(
@@ -16,12 +32,14 @@ function getSecret() {
   return secret;
 }
 
-function sign(value: string) {
+function signPayload(
+  payload: string
+) {
   return createHmac(
     "sha256",
-    getSecret()
+    getQrSecret()
   )
-    .update(value)
+    .update(payload)
     .digest("base64url");
 }
 
@@ -30,19 +48,29 @@ export async function GET(
 ) {
   try {
     const sessionId =
-      request.nextUrl.searchParams.get(
-        "sessionId"
-      );
+      request.nextUrl
+        .searchParams
+        .get(
+          "sessionId"
+        );
 
     if (!sessionId) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Session ID tidak tersedia.",
         },
         {
-          status: 400,
+          status:
+            400,
+
+          headers: {
+            "Cache-Control":
+              "no-store, max-age=0",
+          },
         }
       );
     }
@@ -51,28 +79,48 @@ export async function GET(
       await createClient();
 
     const {
-      data: { user },
+      data: {
+        user,
+      },
+
+      error:
+        userError,
     } =
       await supabase.auth.getUser();
 
-    if (!user) {
+    if (
+      userError ||
+      !user
+    ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "Anda belum login.",
+            "Anda belum login sebagai admin.",
         },
         {
-          status: 401,
+          status:
+            401,
+
+          headers: {
+            "Cache-Control":
+              "no-store, max-age=0",
+          },
         }
       );
     }
 
     const {
-      data: session,
+      data:
+        session,
+
       error,
     } = await supabase
-      .from("attendance_sessions")
+      .from(
+        "attendance_sessions"
+      )
       .select(
         `
         id,
@@ -82,65 +130,118 @@ export async function GET(
         is_active
         `
       )
-      .eq("id", sessionId)
+      .eq(
+        "id",
+        sessionId
+      )
       .single();
 
-    if (error || !session) {
+    if (
+      error ||
+      !session
+    ) {
+      console.error(
+        "QR SESSION QUERY:",
+        error
+      );
+
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Session presensi tidak ditemukan.",
         },
         {
-          status: 404,
+          status:
+            404,
+
+          headers: {
+            "Cache-Control":
+              "no-store, max-age=0",
+          },
         }
       );
     }
 
-    if (!session.is_active) {
+    if (
+      !session.is_active
+    ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Presensi sudah ditutup.",
         },
         {
-          status: 410,
+          status:
+            410,
+
+          headers: {
+            "Cache-Control":
+              "no-store, max-age=0",
+          },
         }
       );
     }
 
-    const now = Date.now();
+    const now =
+      Date.now();
 
     const sessionEnd =
       new Date(
         session.ends_at
       ).getTime();
 
-    if (now > sessionEnd) {
+    if (
+      !Number.isFinite(
+        sessionEnd
+      ) ||
+      now >=
+        sessionEnd
+    ) {
       return NextResponse.json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Waktu presensi sudah berakhir.",
         },
         {
-          status: 410,
+          status:
+            410,
+
+          headers: {
+            "Cache-Control":
+              "no-store, max-age=0",
+          },
         }
       );
     }
 
-    const issuedAt = now;
+    /*
+     * QR berlaku maksimal
+     * sekitar 35 detik.
+     */
+    const issuedAt =
+      now;
 
     const expiresAt =
       Math.min(
-        now + 35_000,
+        now +
+          35_000,
+
         sessionEnd
       );
 
     const nonce =
-      randomBytes(12).toString(
+      randomBytes(
+        12
+      ).toString(
         "hex"
       );
 
@@ -152,7 +253,9 @@ export async function GET(
       `${nonce}`;
 
     const signature =
-      sign(payload);
+      signPayload(
+        payload
+      );
 
     const code =
       `${issuedAt}.` +
@@ -160,25 +263,44 @@ export async function GET(
       `${nonce}.` +
       `${signature}`;
 
-    return NextResponse.json({
-      success: true,
-      code,
-      expiresAt,
-    });
+    return NextResponse.json(
+      {
+        success:
+          true,
+
+        code,
+
+        expiresAt,
+      },
+      {
+        headers: {
+          "Cache-Control":
+            "no-store, max-age=0",
+        },
+      }
+    );
   } catch (error) {
     console.error(
-      "QR generation error:",
+      "DYNAMIC QR API ERROR:",
       error
     );
 
     return NextResponse.json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           "Gagal membuat QR dinamis.",
       },
       {
-        status: 500,
+        status:
+          500,
+
+        headers: {
+          "Cache-Control":
+            "no-store, max-age=0",
+        },
       }
     );
   }

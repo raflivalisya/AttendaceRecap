@@ -13,91 +13,157 @@ import {
   NextResponse,
 } from "next/server";
 
+import {
+  CAMPUS_LOCATION,
+} from "@/lib/campus";
+
 export const dynamic =
   "force-dynamic";
 
-function getSecret() {
+export const runtime =
+  "nodejs";
+
+/*
+ * ==========================================
+ * SECRET
+ * ==========================================
+ */
+
+function getQrSecret() {
   const secret =
-    process.env.QR_SIGNING_SECRET;
+    process.env
+      .QR_SIGNING_SECRET;
 
   if (!secret) {
     throw new Error(
-      "QR_SIGNING_SECRET belum tersedia."
+      "QR_SIGNING_SECRET belum dikonfigurasi."
     );
   }
 
   return secret;
 }
 
-function sign(value: string) {
+/*
+ * ==========================================
+ * SIGNATURE
+ * ==========================================
+ */
+
+function signPayload(
+  payload: string
+) {
   return createHmac(
     "sha256",
-    getSecret()
+    getQrSecret()
   )
-    .update(value)
+    .update(payload)
     .digest("base64url");
 }
 
+/*
+ * ==========================================
+ * SAFE COMPARE
+ * ==========================================
+ */
+
 function safeCompare(
-  a: string,
-  b: string
+  first: string,
+  second: string
 ) {
-  const bufferA =
-    Buffer.from(a);
+  try {
+    const firstBuffer =
+      Buffer.from(
+        first
+      );
 
-  const bufferB =
-    Buffer.from(b);
+    const secondBuffer =
+      Buffer.from(
+        second
+      );
 
-  if (
-    bufferA.length !==
-    bufferB.length
-  ) {
+    if (
+      firstBuffer.length !==
+      secondBuffer.length
+    ) {
+      return false;
+    }
+
+    return timingSafeEqual(
+      firstBuffer,
+      secondBuffer
+    );
+  } catch {
     return false;
   }
-
-  return timingSafeEqual(
-    bufferA,
-    bufferB
-  );
 }
+
+/*
+ * ==========================================
+ * HASH
+ * ==========================================
+ */
+
+function hashValue(
+  value: string
+) {
+  return createHash(
+    "sha256"
+  )
+    .update(
+      `${getQrSecret()}:${value}`
+    )
+    .digest("hex");
+}
+
+/*
+ * ==========================================
+ * SUPABASE SERVER ADMIN
+ * ==========================================
+ */
 
 function getAdminSupabase() {
   const url =
-    process.env.SUPABASE_URL ||
+    process.env
+      .SUPABASE_URL ||
     process.env
       .NEXT_PUBLIC_SUPABASE_URL;
 
-  const serviceKey =
+  const serviceRoleKey =
     process.env
       .SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !serviceKey) {
+  if (!url) {
     throw new Error(
-      "Konfigurasi Supabase server belum lengkap."
+      "URL Supabase server belum dikonfigurasi."
+    );
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY belum dikonfigurasi."
     );
   }
 
   return createClient(
     url,
-    serviceKey,
+    serviceRoleKey,
     {
       auth: {
-        persistSession: false,
-        autoRefreshToken: false,
+        persistSession:
+          false,
+
+        autoRefreshToken:
+          false,
       },
     }
   );
 }
 
-function hashValue(
-  value: string
-) {
-  return createHash("sha256")
-    .update(
-      `${getSecret()}:${value}`
-    )
-    .digest("hex");
-}
+/*
+ * ==========================================
+ * FIND SESSION
+ * ==========================================
+ */
 
 async function findSession(
   token: string
@@ -140,7 +206,10 @@ async function findSession(
         )
       )
     `)
-    .eq("token", token)
+    .eq(
+      "token",
+      token
+    )
     .maybeSingle();
 
   if (error) {
@@ -161,8 +230,12 @@ async function findSession(
       ? meetingRaw[0]
       : meetingRaw;
 
+  if (!meeting) {
+    return null;
+  }
+
   const courseRaw =
-    meeting?.courses;
+    meeting.courses;
 
   const course =
     Array.isArray(
@@ -171,21 +244,37 @@ async function findSession(
       ? courseRaw[0]
       : courseRaw;
 
+  if (!course) {
+    return null;
+  }
+
   return {
-    session: data,
+    session:
+      data,
+
     meeting,
+
     course,
   };
 }
 
+/*
+ * ==========================================
+ * VALIDASI SESSION
+ * ==========================================
+ */
+
 function validateSession(
   session: any
 ) {
-  if (!session.is_active) {
+  if (
+    !session.is_active
+  ) {
     return "Presensi sudah ditutup.";
   }
 
-  const now = Date.now();
+  const now =
+    Date.now();
 
   const start =
     new Date(
@@ -197,25 +286,53 @@ function validateSession(
       session.ends_at
     ).getTime();
 
-  if (now < start) {
+  if (
+    !Number.isFinite(
+      start
+    ) ||
+    !Number.isFinite(
+      end
+    )
+  ) {
+    return "Waktu sesi presensi tidak valid.";
+  }
+
+  if (
+    now <
+    start
+  ) {
     return "Presensi belum dibuka.";
   }
 
-  if (now > end) {
+  if (
+    now >=
+    end
+  ) {
     return "Waktu presensi sudah berakhir.";
   }
 
   return null;
 }
 
+/*
+ * ==========================================
+ * VALIDASI QR DINAMIS
+ * ==========================================
+ */
+
 function verifyQrCode(
   session: any,
   code: string
 ) {
   const parts =
-    code.split(".");
+    code.split(
+      "."
+    );
 
-  if (parts.length !== 4) {
+  if (
+    parts.length !==
+    4
+  ) {
     return false;
   }
 
@@ -227,10 +344,14 @@ function verifyQrCode(
   ] = parts;
 
   const issuedAt =
-    Number(issuedAtText);
+    Number(
+      issuedAtText
+    );
 
   const expiresAt =
-    Number(expiresAtText);
+    Number(
+      expiresAtText
+    );
 
   if (
     !Number.isFinite(
@@ -243,12 +364,41 @@ function verifyQrCode(
     return false;
   }
 
-  const now = Date.now();
-
-  if (now > expiresAt) {
+  if (
+    !nonce ||
+    !signature
+  ) {
     return false;
   }
 
+  const now =
+    Date.now();
+
+  /*
+   * QR sudah expired.
+   */
+  if (
+    now >
+    expiresAt
+  ) {
+    return false;
+  }
+
+  /*
+   * Hindari QR timestamp
+   * terlalu jauh di masa depan.
+   */
+  if (
+    issuedAt >
+    now + 10_000
+  ) {
+    return false;
+  }
+
+  /*
+   * QR tidak boleh memiliki
+   * masa aktif > 40 detik.
+   */
   if (
     expiresAt -
       issuedAt >
@@ -265,7 +415,9 @@ function verifyQrCode(
     `${nonce}`;
 
   const expected =
-    sign(payload);
+    signPayload(
+      payload
+    );
 
   return safeCompare(
     signature,
@@ -273,19 +425,25 @@ function verifyQrCode(
   );
 }
 
+/*
+ * ==========================================
+ * TICKET
+ *
+ * Setelah QR valid,
+ * mahasiswa diberi waktu 2 menit
+ * untuk mengetik NPM.
+ * ==========================================
+ */
+
 function createTicket(
   session: any,
   deviceHash: string
 ) {
-  /*
-   * Setelah QR berhasil discan,
-   * mahasiswa diberi waktu 2 menit
-   * untuk mengetik NPM.
-   */
-
   const expiresAt =
     Date.now() +
-    2 * 60 * 1000;
+    2 *
+      60 *
+      1000;
 
   const payload =
     `${session.id}:` +
@@ -293,7 +451,9 @@ function createTicket(
     `${expiresAt}:ticket`;
 
   const signature =
-    sign(payload);
+    signPayload(
+      payload
+    );
 
   return (
     `${expiresAt}.` +
@@ -308,20 +468,27 @@ function verifyTicket(
   ticket: string
 ) {
   const parts =
-    ticket.split(".");
+    ticket.split(
+      "."
+    );
 
-  if (parts.length !== 3) {
+  if (
+    parts.length !==
+    3
+  ) {
     return false;
   }
 
   const [
     expiresText,
-    ticketDevice,
+    ticketDeviceHash,
     signature,
   ] = parts;
 
   const expiresAt =
-    Number(expiresText);
+    Number(
+      expiresText
+    );
 
   if (
     !Number.isFinite(
@@ -339,7 +506,7 @@ function verifyTicket(
   }
 
   if (
-    ticketDevice !==
+    ticketDeviceHash !==
     deviceHash
   ) {
     return false;
@@ -351,7 +518,9 @@ function verifyTicket(
     `${expiresAt}:ticket`;
 
   const expected =
-    sign(payload);
+    signPayload(
+      payload
+    );
 
   return safeCompare(
     signature,
@@ -359,66 +528,126 @@ function verifyTicket(
   );
 }
 
+/*
+ * ==========================================
+ * GPS DISTANCE
+ * ==========================================
+ */
+
 function toRadians(
   value: number
 ) {
   return (
     value *
-    (Math.PI / 180)
+    (Math.PI /
+      180)
   );
 }
 
 function distanceMeters(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
+  latitude1: number,
+  longitude1: number,
+  latitude2: number,
+  longitude2: number
 ) {
   const earthRadius =
-    6371000;
+    6_371_000;
 
-  const deltaLat =
+  const deltaLatitude =
     toRadians(
-      lat2 - lat1
+      latitude2 -
+        latitude1
     );
 
-  const deltaLon =
+  const deltaLongitude =
     toRadians(
-      lon2 - lon1
+      longitude2 -
+        longitude1
     );
+
+  const first =
+    Math.sin(
+      deltaLatitude /
+        2
+    ) ** 2;
+
+  const second =
+    Math.cos(
+      toRadians(
+        latitude1
+      )
+    ) *
+    Math.cos(
+      toRadians(
+        latitude2
+      )
+    ) *
+    Math.sin(
+      deltaLongitude /
+        2
+    ) ** 2;
 
   const a =
-    Math.sin(
-      deltaLat / 2
-    ) ** 2 +
-    Math.cos(
-      toRadians(lat1)
-    ) *
-      Math.cos(
-        toRadians(lat2)
-      ) *
-      Math.sin(
-        deltaLon / 2
-      ) ** 2;
+    first +
+    second;
 
   const c =
     2 *
     Math.atan2(
-      Math.sqrt(a),
-      Math.sqrt(1 - a)
+      Math.sqrt(
+        a
+      ),
+      Math.sqrt(
+        1 - a
+      )
     );
 
   return (
-    earthRadius * c
+    earthRadius *
+    c
   );
 }
 
-/* ======================================
-   VALIDASI QR SETELAH SCAN
-====================================== */
+/*
+ * ==========================================
+ * JSON RESPONSE
+ * ==========================================
+ */
+
+function json(
+  data: unknown,
+  status =
+    200
+) {
+  return NextResponse.json(
+    data,
+    {
+      status,
+
+      headers: {
+        "Cache-Control":
+          "no-store, max-age=0",
+      },
+    }
+  );
+}
+
+/*
+ * =========================================================
+ * GET
+ *
+ * Dijalankan setelah mahasiswa scan QR.
+ *
+ * Belum meminta GPS.
+ *
+ * Jika QR valid:
+ * server memberi ticket selama 2 menit.
+ * =========================================================
+ */
 
 export async function GET(
   request: NextRequest,
+
   context: {
     params: Promise<{
       token: string;
@@ -426,32 +655,39 @@ export async function GET(
   }
 ) {
   try {
-    const { token } =
+    const {
+      token,
+    } =
       await context.params;
 
     const code =
       request.nextUrl
         .searchParams
-        .get("code");
+        .get(
+          "code"
+        );
 
     const deviceId =
       request.nextUrl
         .searchParams
-        .get("deviceId");
+        .get(
+          "deviceId"
+        );
 
     if (
+      !token ||
       !code ||
       !deviceId
     ) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "QR tidak valid. Silakan scan ulang.",
+            "QR tidak valid. Silakan scan QR terbaru dari layar dosen.",
         },
-        {
-          status: 400,
-        }
+        400
       );
     }
 
@@ -461,15 +697,15 @@ export async function GET(
       );
 
     if (!result) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Sesi presensi tidak ditemukan.",
         },
-        {
-          status: 404,
-        }
+        404
       );
     }
 
@@ -478,112 +714,149 @@ export async function GET(
         result.session
       );
 
-    if (sessionError) {
-      return NextResponse.json(
+    if (
+      sessionError
+    ) {
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             sessionError,
         },
-        {
-          status: 410,
-        }
+        410
       );
     }
 
+    /*
+     * Validasi QR.
+     */
     if (
       !verifyQrCode(
         result.session,
         code
       )
     ) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "QR sudah kedaluwarsa. Silakan scan QR terbaru.",
+            "QR sudah kedaluwarsa. Silakan scan QR terbaru dari layar dosen.",
         },
-        {
-          status: 410,
-        }
+        410
       );
     }
 
+    /*
+     * Hash device.
+     */
     const deviceHash =
       hashValue(
         `device:${deviceId}`
       );
 
+    /*
+     * Ticket 2 menit.
+     */
     const ticket =
       createTicket(
         result.session,
         deviceHash
       );
 
-    return NextResponse.json({
-      success: true,
+    return json({
+      success:
+        true,
 
       ticket,
 
       data: {
         meetingNo:
-          result.meeting
+          result
+            .meeting
             .meeting_no,
 
         meetingDate:
-          result.meeting
+          result
+            .meeting
             .meeting_date,
 
         courseName:
-          result.course.name,
+          result
+            .course
+            .name,
 
         className:
-          result.course
+          result
+            .course
             .class_name,
 
         lecturer:
-          result.course
+          result
+            .course
             .lecturer,
 
         schedule:
-          result.course
+          result
+            .course
             .schedule,
 
         endsAt:
-          result.session
+          result
+            .session
             .ends_at,
 
         requireLocation:
-          result.session
-            .require_location,
+          true,
 
         radiusMeters:
-          result.session
-            .radius_meters,
+          Number(
+            result
+              .session
+              .radius_meters ||
+              CAMPUS_LOCATION
+                .defaultRadius
+          ),
+
+        campusName:
+          CAMPUS_LOCATION
+            .name,
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error(
+      "PRESENSI GET ERROR:",
+      error
+    );
 
-    return NextResponse.json(
+    return json(
       {
-        success: false,
+        success:
+          false,
+
         message:
-          "Terjadi kesalahan pada server.",
+          "Terjadi kesalahan saat memvalidasi QR.",
       },
-      {
-        status: 500,
-      }
+      500
     );
   }
 }
 
-/* ======================================
-   SIMPAN PRESENSI
-====================================== */
+/*
+ * =========================================================
+ * POST
+ *
+ * Dijalankan ketika mahasiswa
+ * klik KIRIM PRESENSI.
+ * =========================================================
+ */
 
 export async function POST(
   request: NextRequest,
+
   context: {
     params: Promise<{
       token: string;
@@ -591,7 +864,9 @@ export async function POST(
   }
 ) {
   try {
-    const { token } =
+    const {
+      token,
+    } =
       await context.params;
 
     const body =
@@ -599,29 +874,38 @@ export async function POST(
 
     const npm =
       String(
-        body.npm ?? ""
+        body.npm ??
+          ""
       ).trim();
 
     const deviceId =
       String(
-        body.deviceId ?? ""
+        body.deviceId ??
+          ""
       ).trim();
 
     const ticket =
       String(
-        body.ticket ?? ""
+        body.ticket ??
+          ""
       ).trim();
 
+    /*
+     * ===============================
+     * VALIDASI INPUT
+     * ===============================
+     */
+
     if (!npm) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "NPM wajib diisi.",
         },
-        {
-          status: 400,
-        }
+        400
       );
     }
 
@@ -629,17 +913,23 @@ export async function POST(
       !deviceId ||
       !ticket
     ) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Sesi perangkat tidak valid. Scan QR kembali.",
         },
-        {
-          status: 400,
-        }
+        400
       );
     }
+
+    /*
+     * ===============================
+     * SESSION
+     * ===============================
+     */
 
     const result =
       await findSession(
@@ -647,15 +937,15 @@ export async function POST(
       );
 
     if (!result) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Sesi presensi tidak ditemukan.",
         },
-        {
-          status: 404,
-        }
+        404
       );
     }
 
@@ -664,23 +954,37 @@ export async function POST(
         result.session
       );
 
-    if (sessionError) {
-      return NextResponse.json(
+    if (
+      sessionError
+    ) {
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             sessionError,
         },
-        {
-          status: 410,
-        }
+        410
       );
     }
+
+    /*
+     * ===============================
+     * DEVICE
+     * ===============================
+     */
 
     const deviceHash =
       hashValue(
         `device:${deviceId}`
       );
+
+    /*
+     * ===============================
+     * TICKET
+     * ===============================
+     */
 
     if (
       !verifyTicket(
@@ -689,70 +993,97 @@ export async function POST(
         ticket
       )
     ) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "Waktu pengisian sudah habis. Scan QR kembali.",
+            "Waktu pengisian sudah habis. Scan QR terbaru kembali.",
         },
-        {
-          status: 410,
-        }
+        410
       );
     }
 
     const supabase =
       getAdminSupabase();
 
-    /* ===========================
-       VALIDASI MAHASISWA
-    =========================== */
+    /*
+     * ===============================
+     * CEK MAHASISWA
+     * ===============================
+     */
 
     const {
-      data: student,
-      error: studentError,
+      data:
+        student,
+
+      error:
+        studentError,
     } = await supabase
-      .from("students")
+      .from(
+        "students"
+      )
       .select(
         "id,npm,name,course_id"
       )
       .eq(
         "course_id",
-        result.course.id
+        result
+          .course
+          .id
       )
-      .eq("npm", npm)
+      .eq(
+        "npm",
+        npm
+      )
       .maybeSingle();
 
-    if (studentError) {
+    if (
+      studentError
+    ) {
       throw studentError;
     }
 
-    if (!student) {
-      return NextResponse.json(
+    if (
+      !student
+    ) {
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
-            "NPM tidak terdaftar di kelas ini.",
+            "NPM tidak terdaftar pada kelas ini.",
         },
-        {
-          status: 404,
-        }
+        404
       );
     }
 
-    /* ===========================
-       CEK SUDAH ABSEN
-    =========================== */
+    /*
+     * ===============================
+     * CEK SUDAH ABSEN
+     * ===============================
+     */
 
     const {
       data:
         existingAttendance,
+
+      error:
+        existingAttendanceError,
     } = await supabase
-      .from("attendance")
-      .select("id,status")
+      .from(
+        "attendance"
+      )
+      .select(
+        "id,status"
+      )
       .eq(
         "meeting_id",
-        result.meeting.id
+        result
+          .meeting
+          .id
       )
       .eq(
         "student_id",
@@ -761,27 +1092,38 @@ export async function POST(
       .maybeSingle();
 
     if (
+      existingAttendanceError
+    ) {
+      throw existingAttendanceError;
+    }
+
+    if (
       existingAttendance
     ) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             `Presensi sudah tercatat dengan status ${existingAttendance.status}.`,
         },
-        {
-          status: 409,
-        }
+        409
       );
     }
 
-    /* ===========================
-       CEK PERANGKAT
-    =========================== */
+    /*
+     * ===============================
+     * CEK DEVICE SUDAH DIPAKAI
+     * ===============================
+     */
 
     const {
       data:
         existingDevice,
+
+      error:
+        existingDeviceError,
     } = await supabase
       .from(
         "attendance_checkins"
@@ -791,7 +1133,9 @@ export async function POST(
       )
       .eq(
         "meeting_id",
-        result.meeting.id
+        result
+          .meeting
+          .id
       )
       .eq(
         "device_hash",
@@ -800,170 +1144,184 @@ export async function POST(
       .maybeSingle();
 
     if (
+      existingDeviceError
+    ) {
+      throw existingDeviceError;
+    }
+
+    if (
       existingDevice &&
       existingDevice.student_id !==
         student.id
     ) {
-      return NextResponse.json(
+      return json(
         {
-          success: false,
+          success:
+            false,
+
           message:
             "Perangkat ini sudah digunakan untuk presensi mahasiswa lain pada pertemuan ini.",
         },
-        {
-          status: 409,
-        }
+        409
       );
     }
 
-    /* ===========================
-       VALIDASI GPS
-    =========================== */
+    /*
+     * ===============================
+     * GPS
+     * ===============================
+     */
 
-    let distance:
-      | number
-      | null = null;
+    const latitude =
+      Number(
+        body.latitude
+      );
 
-    let latitude:
-      | number
-      | null = null;
+    const longitude =
+      Number(
+        body.longitude
+      );
 
-    let longitude:
-      | number
-      | null = null;
-
-    let accuracy:
-      | number
-      | null = null;
+    const accuracy =
+      Number(
+        body.accuracy
+      );
 
     if (
-      result.session
-        .require_location
+      !Number.isFinite(
+        latitude
+      ) ||
+      !Number.isFinite(
+        longitude
+      ) ||
+      !Number.isFinite(
+        accuracy
+      )
     ) {
-      latitude =
-        Number(
-          body.latitude
-        );
+      return json(
+        {
+          success:
+            false,
 
-      longitude =
-        Number(
-          body.longitude
-        );
-
-      accuracy =
-        Number(
-          body.accuracy
-        );
-
-      if (
-        !Number.isFinite(
-          latitude
-        ) ||
-        !Number.isFinite(
-          longitude
-        ) ||
-        !Number.isFinite(
-          accuracy
-        )
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "Lokasi tidak dapat dibaca. Aktifkan GPS dan izin lokasi lalu coba kembali.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      if (
-        accuracy >
-        Number(
-          result.session
-            .max_accuracy_m
-        )
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              `Akurasi lokasi terlalu rendah (±${Math.round(
-                accuracy
-              )} meter). Aktifkan lokasi presisi lalu coba kembali.`,
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      const centerLat =
-        Number(
-          result.session
-            .latitude
-        );
-
-      const centerLon =
-        Number(
-          result.session
-            .longitude
-        );
-
-      if (
-        !Number.isFinite(
-          centerLat
-        ) ||
-        !Number.isFinite(
-          centerLon
-        )
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "Lokasi kelas belum dikonfigurasi.",
-          },
-          {
-            status: 500,
-          }
-        );
-      }
-
-      distance =
-        distanceMeters(
-          centerLat,
-          centerLon,
-          latitude,
-          longitude
-        );
-
-      if (
-        distance >
-        Number(
-          result.session
-            .radius_meters
-        )
-      ) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              `Anda berada di luar area presensi (${Math.round(
-                distance
-              )} meter dari lokasi kelas).`,
-          },
-          {
-            status: 403,
-          }
-        );
-      }
+          message:
+            "Lokasi tidak dapat dibaca. Aktifkan GPS dan izinkan akses lokasi pada browser.",
+        },
+        400
+      );
     }
 
-    /* ===========================
-       IP HASH
-    =========================== */
+    if (
+      latitude <
+        -90 ||
+      latitude >
+        90 ||
+      longitude <
+        -180 ||
+      longitude >
+        180 ||
+      accuracy <=
+        0
+    ) {
+      return json(
+        {
+          success:
+            false,
+
+          message:
+            "Data lokasi perangkat tidak valid.",
+        },
+        400
+      );
+    }
+
+    /*
+     * ===============================
+     * AKURASI GPS
+     * ===============================
+     */
+
+    const maxAccuracy =
+      Number(
+        result
+          .session
+          .max_accuracy_m ||
+          CAMPUS_LOCATION
+            .maxAccuracy
+      );
+
+    if (
+      accuracy >
+      maxAccuracy
+    ) {
+      return json(
+        {
+          success:
+            false,
+
+          message:
+            `Akurasi GPS terlalu rendah (±${Math.round(
+              accuracy
+            )} meter). Aktifkan lokasi presisi lalu coba kembali.`,
+        },
+        400
+      );
+    }
+
+    /*
+     * ===============================
+     * RADIUS
+     * ===============================
+     */
+
+    const radius =
+      Number(
+        result
+          .session
+          .radius_meters ||
+          CAMPUS_LOCATION
+            .defaultRadius
+      );
+
+    /*
+     * Titik pusat SELALU
+     * kampus Teknokrat.
+     */
+    const distance =
+      distanceMeters(
+        CAMPUS_LOCATION
+          .latitude,
+
+        CAMPUS_LOCATION
+          .longitude,
+
+        latitude,
+
+        longitude
+      );
+
+    if (
+      distance >
+      radius
+    ) {
+      return json(
+        {
+          success:
+            false,
+
+          message:
+            `Anda berada di luar area kampus (${Math.round(
+              distance
+            )} meter dari titik presensi). Batas ${radius} meter.`,
+        },
+        403
+      );
+    }
+
+    /*
+     * ===============================
+     * IP
+     * ===============================
+     */
 
     const forwarded =
       request.headers.get(
@@ -972,13 +1330,18 @@ export async function POST(
 
     const ip =
       forwarded
-        ?.split(",")[0]
+        ?.split(
+          ","
+        )[0]
         ?.trim() ||
       request.headers.get(
         "x-real-ip"
       ) ||
       "";
 
+    /*
+     * IP tidak disimpan asli.
+     */
     const ipHash =
       ip
         ? hashValue(
@@ -991,14 +1354,18 @@ export async function POST(
         "user-agent"
       );
 
-    /* ===========================
-       SIMPAN LOG
-    =========================== */
+    /*
+     * ===============================
+     * SIMPAN CHECKIN
+     * ===============================
+     */
 
     let checkinCreated =
       false;
 
-    if (!existingDevice) {
+    if (
+      !existingDevice
+    ) {
       const {
         error:
           checkinError,
@@ -1008,10 +1375,14 @@ export async function POST(
         )
         .insert({
           session_id:
-            result.session.id,
+            result
+              .session
+              .id,
 
           meeting_id:
-            result.meeting.id,
+            result
+              .meeting
+              .id,
 
           student_id:
             student.id,
@@ -1023,7 +1394,9 @@ export async function POST(
             ipHash,
 
           latitude,
+
           longitude,
+
           accuracy_m:
             accuracy,
 
@@ -1037,19 +1410,22 @@ export async function POST(
       if (
         checkinError
       ) {
+        /*
+         * Unique violation.
+         */
         if (
           checkinError.code ===
           "23505"
         ) {
-          return NextResponse.json(
+          return json(
             {
-              success: false,
+              success:
+                false,
+
               message:
-                "Perangkat atau mahasiswa sudah digunakan untuk presensi pada pertemuan ini.",
+                "Mahasiswa atau perangkat ini sudah digunakan untuk presensi pada pertemuan ini.",
             },
-            {
-              status: 409,
-            }
+            409
           );
         }
 
@@ -1060,28 +1436,39 @@ export async function POST(
         true;
     }
 
-    /* ===========================
-       SIMPAN HADIR
-    =========================== */
+    /*
+     * ===============================
+     * SIMPAN HADIR
+     * ===============================
+     */
 
     const {
       error:
         attendanceError,
     } = await supabase
-      .from("attendance")
+      .from(
+        "attendance"
+      )
       .insert({
         meeting_id:
-          result.meeting.id,
+          result
+            .meeting
+            .id,
 
         student_id:
           student.id,
 
-        status: "H",
+        status:
+          "H",
       });
 
     if (
       attendanceError
     ) {
+      /*
+       * Rollback checkin
+       * jika attendance gagal.
+       */
       if (
         checkinCreated
       ) {
@@ -1092,7 +1479,9 @@ export async function POST(
           .delete()
           .eq(
             "meeting_id",
-            result.meeting.id
+            result
+              .meeting
+              .id
           )
           .eq(
             "student_id",
@@ -1100,11 +1489,34 @@ export async function POST(
           );
       }
 
+      if (
+        attendanceError.code ===
+        "23505"
+      ) {
+        return json(
+          {
+            success:
+              false,
+
+            message:
+              "Presensi mahasiswa sudah tercatat.",
+          },
+          409
+        );
+      }
+
       throw attendanceError;
     }
 
-    return NextResponse.json({
-      success: true,
+    /*
+     * ===============================
+     * BERHASIL
+     * ===============================
+     */
+
+    return json({
+      success:
+        true,
 
       message:
         "Presensi berhasil. Anda tercatat Hadir.",
@@ -1118,24 +1530,30 @@ export async function POST(
       },
 
       distance:
-        distance !== null
-          ? Math.round(
-              distance
-            )
-          : null,
+        Math.round(
+          distance
+        ),
+
+      accuracy:
+        Math.round(
+          accuracy
+        ),
     });
   } catch (error) {
-    console.error(error);
+    console.error(
+      "PRESENSI POST ERROR:",
+      error
+    );
 
-    return NextResponse.json(
+    return json(
       {
-        success: false,
+        success:
+          false,
+
         message:
           "Gagal menyimpan presensi.",
       },
-      {
-        status: 500,
-      }
+      500
     );
   }
 }
