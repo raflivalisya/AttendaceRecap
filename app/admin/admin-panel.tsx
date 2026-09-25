@@ -80,6 +80,26 @@ const emptyCourse: NewCourseForm = {
 
 
 
+
+async function readApiJson(response: Response) {
+  const raw = await response.text();
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const contentType = response.headers.get("content-type") ?? "";
+
+    if (raw.trimStart().startsWith("<") || contentType.includes("text/html")) {
+      throw new Error(
+        `Endpoint API tidak mengembalikan JSON (HTTP ${response.status}). ` +
+          "Pastikan route API sudah berada di folder yang benar dan deployment terbaru sudah aktif.",
+      );
+    }
+
+    throw new Error(`Respons API tidak valid (HTTP ${response.status}).`);
+  }
+}
+
 export default function AdminPanel(props: Props) {
 
   const access =
@@ -329,7 +349,7 @@ const canManageSelectedGrades =
           headers: { Accept: "application/json" },
         });
 
-        const result = await response.json();
+        const result = await readApiJson(response);
 
         if (!response.ok) {
           throw new Error(result.message || "Gagal memuat daftar dosen.");
@@ -494,7 +514,7 @@ const canManageSelectedGrades =
         body: JSON.stringify(newCourse),
       });
 
-      const result = await response.json();
+      const result = await readApiJson(response);
 
       if (!response.ok) {
         throw new Error(result.message || "Gagal menambah mata kuliah.");
@@ -762,7 +782,11 @@ async function refreshStudents() {
 
     if (!selectedCourse) return;
 
-    let lecturerName = String(courseDraft.lecturer ?? selectedCourse.lecturer).trim();
+    let lecturerName = String(
+      courseDraft.lecturer ?? selectedCourse.lecturer,
+    ).trim();
+
+    let selectedLecturerUserId = "";
     let previousLecturerUserId = "";
 
     if (access.isSuperAdmin) {
@@ -781,9 +805,12 @@ async function refreshStudents() {
       }
 
       lecturerName = selectedLecturer.display_name;
+      selectedLecturerUserId = selectedLecturer.user_id;
+
       previousLecturerUserId =
-        lecturers.find((lecturer) => lecturer.course_ids.includes(selectedCourse.id))
-          ?.user_id ?? "";
+        lecturers.find((lecturer) =>
+          lecturer.course_ids.includes(selectedCourse.id),
+        )?.user_id ?? "";
     }
 
     const payload = {
@@ -803,36 +830,143 @@ async function refreshStudents() {
     }
 
     setSaving(true);
+    setMessage("");
 
     try {
-      if (access.isSuperAdmin && courseLecturerUserId !== previousLecturerUserId) {
-        const response = await fetch("/api/admin/courses", {
-          method: "PATCH",
-          credentials: "same-origin",
-          cache: "no-store",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            course_id: selectedCourse.id,
-            lecturer_user_id: courseLecturerUserId,
-          }),
-        });
+      /*
+       * SUPER ADMIN:
+       * Sinkronkan akses dosen langsung melalui Supabase + RLS.
+       * Tidak menggunakan PATCH /api/admin/courses agar tidak terkena
+       * masalah response HTML / JSON pada deployment.
+       */
+      if (
+        access.isSuperAdmin &&
+        selectedLecturerUserId &&
+        selectedLecturerUserId !== previousLecturerUserId
+      ) {
+        const { error: deleteOldLecturerError } = await supabase
+          .from("course_members")
+          .delete()
+          .eq("course_id", selectedCourse.id)
+          .eq("role", "lecturer");
 
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.message || "Gagal mengganti dosen pengampu.");
+        if (deleteOldLecturerError) {
+          throw new Error(
+            `Gagal melepas dosen lama: ${deleteOldLecturerError.message}`,
+          );
         }
 
+        const { error: assignLecturerError } = await supabase
+          .from("course_members")
+          .upsert(
+            {
+              course_id: selectedCourse.id,
+              user_id: selectedLecturerUserId,
+              role: "lecturer",
+            },
+            {
+              onConflict: "course_id,user_id",
+            },
+          );
+
+        if (assignLecturerError) {
+          /*
+           * Coba kembalikan dosen lama jika assign baru gagal.
+           */
+          if (previousLecturerUserId) {
+            await supabase.from("course_members").upsert(
+              {
+                course_id: selectedCourse.id,
+                user_id: previousLecturerUserId,
+                role: "lecturer",
+              },
+              {
+                onConflict: "course_id,user_id",
+              },
+            );
+          }
+
+          throw new Error(
+            `Gagal memberikan akses kepada dosen baru: ${assignLecturerError.message}`,
+          );
+        }
+      }
+
+      /*
+       * Simpan identitas/pengaturan mata kuliah.
+       */
+      const { error: updateCourseError } = await supabase
+        .from("courses")
+        .update(payload)
+        .eq("id", selectedCourse.id);
+
+      if (updateCourseError) {
+        /*
+         * Kalau update course gagal setelah membership berubah,
+         * best-effort rollback membership ke dosen sebelumnya.
+         */
+        if (
+          access.isSuperAdmin &&
+          selectedLecturerUserId &&
+          selectedLecturerUserId !== previousLecturerUserId
+        ) {
+          await supabase
+            .from("course_members")
+            .delete()
+            .eq("course_id", selectedCourse.id)
+            .eq("role", "lecturer");
+
+          if (previousLecturerUserId) {
+            await supabase.from("course_members").upsert(
+              {
+                course_id: selectedCourse.id,
+                user_id: previousLecturerUserId,
+                role: "lecturer",
+              },
+              {
+                onConflict: "course_id,user_id",
+              },
+            );
+          }
+        }
+
+        throw updateCourseError;
+      }
+
+      setCourses((items) =>
+        items.map((course) =>
+          course.id === selectedCourse.id
+            ? {
+                ...course,
+                ...payload,
+              }
+            : course,
+        ),
+      );
+
+      setCourseDraft((current) => ({
+        ...current,
+        ...payload,
+      }));
+
+      /*
+       * Perbarui cache daftar dosen agar UI langsung sinkron.
+       */
+      if (
+        access.isSuperAdmin &&
+        selectedLecturerUserId &&
+        selectedLecturerUserId !== previousLecturerUserId
+      ) {
         setLecturers((items) =>
           items.map((lecturer) => {
             let courseIds = lecturer.course_ids.filter(
               (courseId) => courseId !== selectedCourse.id,
             );
 
-            if (lecturer.user_id === courseLecturerUserId) {
-              courseIds = [...courseIds, selectedCourse.id];
+            if (lecturer.user_id === selectedLecturerUserId) {
+              courseIds = Array.from(
+                new Set([...courseIds, selectedCourse.id]),
+              );
             }
 
             return {
@@ -844,28 +978,18 @@ async function refreshStudents() {
         );
       }
 
-      const { error } = await supabase
-        .from("courses")
-        .update(payload)
-        .eq("id", selectedCourse.id);
-
-      if (error) throw error;
-
-      setCourses((items) =>
-        items.map((course) =>
-          course.id === selectedCourse.id ? { ...course, ...payload } : course,
-        ),
-      );
-
-      setCourseDraft((current) => ({ ...current, ...payload }));
-      notify("Pengaturan kelas disimpan.");
+      notify("Pengaturan kelas berhasil disimpan.");
     } catch (error: any) {
-      notify(error?.message || "Gagal menyimpan pengaturan kelas.");
+      console.error("SAVE COURSE SETTINGS ERROR:", error);
+      notify(
+        `Gagal menyimpan pengaturan: ${
+          error?.message || "Terjadi kesalahan yang tidak diketahui."
+        }`,
+      );
     } finally {
       setSaving(false);
     }
   }
-
 
   async function deleteCourse() {
     if (!access.canDeleteCourse) { notify("Hanya Super Admin yang dapat menghapus kelas."); return; }
