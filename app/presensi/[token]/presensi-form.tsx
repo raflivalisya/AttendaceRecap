@@ -2,103 +2,164 @@
 
 import {
   FormEvent,
-  useEffect,
   useState,
 } from "react";
 
-type Props = {
-  token: string;
-  qrCode: string;
-};
-
 type SessionInfo = {
   meetingNo: number;
+
   meetingDate: string;
+
   courseName: string;
+
   className: string;
+
   lecturer: string;
+
   schedule: string;
+
   endsAt: string;
-  radiusMeters: number;
-  campusName: string;
+
+  radiusMeters:
+    number;
+
+  campusName:
+    string;
+};
+
+type Props = {
+  token:
+    string;
+
+  initialInfo:
+    SessionInfo;
+
+  initialTicket:
+    string;
 };
 
 type LocationData = {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
+  latitude:
+    number;
+
+  longitude:
+    number;
+
+  accuracy:
+    number;
 };
 
 /* =====================================================
    DEVICE ID
 ===================================================== */
 
-function createRandomDeviceId() {
+function createDeviceId() {
   try {
     if (
-      typeof window !== "undefined" &&
-      window.crypto &&
-      typeof window.crypto.randomUUID === "function"
+      typeof window !==
+        "undefined" &&
+      window.crypto
     ) {
-      return window.crypto.randomUUID();
-    }
+      if (
+        typeof window.crypto.randomUUID ===
+        "function"
+      ) {
+        return window.crypto.randomUUID();
+      }
 
-    if (
-      typeof window !== "undefined" &&
-      window.crypto &&
-      typeof window.crypto.getRandomValues === "function"
-    ) {
-      const values = new Uint32Array(4);
+      if (
+        typeof window.crypto.getRandomValues ===
+        "function"
+      ) {
+        const values =
+          new Uint32Array(
+            4
+          );
 
-      window.crypto.getRandomValues(values);
+        window.crypto
+          .getRandomValues(
+            values
+          );
 
-      return Array.from(values)
-        .map((value) => value.toString(16))
-        .join("-");
+        return Array.from(
+          values
+        )
+          .map(
+            (
+              value
+            ) =>
+              value.toString(
+                16
+              )
+          )
+          .join(
+            "-"
+          );
+      }
     }
   } catch {
-    // gunakan fallback
+    // fallback
   }
 
   return (
-    Date.now().toString(36) +
+    Date.now()
+      .toString(36) +
     "-" +
-    Math.random().toString(36).slice(2) +
+    Math.random()
+      .toString(36)
+      .slice(2) +
     "-" +
-    Math.random().toString(36).slice(2)
+    Math.random()
+      .toString(36)
+      .slice(2)
   );
 }
 
-function getCookie(name: string) {
-  if (typeof document === "undefined") {
-    return null;
-  }
+/* =====================================================
+   COOKIE
+===================================================== */
 
-  const target =
-    `${name}=`;
+function getCookie(
+  name: string
+) {
+  try {
+    const prefix =
+      `${name}=`;
 
-  const cookies =
-    document.cookie.split(";");
+    const cookies =
+      document.cookie.split(
+        ";"
+      );
 
-  for (const rawCookie of cookies) {
-    const cookie =
-      rawCookie.trim();
+    for (
+      const rawCookie
+      of cookies
+    ) {
+      const cookie =
+        rawCookie.trim();
 
-    if (cookie.startsWith(target)) {
-      try {
+      if (
+        cookie.startsWith(
+          prefix
+        )
+      ) {
         return decodeURIComponent(
-          cookie.substring(target.length)
-        );
-      } catch {
-        return cookie.substring(
-          target.length
+          cookie.slice(
+            prefix.length
+          )
         );
       }
     }
+  } catch {
+    return null;
   }
 
   return null;
 }
+
+/* =====================================================
+   DEVICE
+===================================================== */
 
 function getDeviceId() {
   const key =
@@ -108,11 +169,13 @@ function getDeviceId() {
    * 1. Cookie
    */
   try {
-    const cookieValue =
-      getCookie(key);
+    const cookie =
+      getCookie(
+        key
+      );
 
-    if (cookieValue) {
-      return cookieValue;
+    if (cookie) {
+      return cookie;
     }
   } catch {
     // lanjut
@@ -123,39 +186,45 @@ function getDeviceId() {
    */
   try {
     const stored =
-      window.localStorage.getItem(key);
+      window.localStorage
+        .getItem(
+          key
+        );
 
     if (stored) {
       return stored;
     }
   } catch {
-    // Safari/private mode
+    // Safari Private
   }
 
   /*
-   * 3. Generate ID baru
+   * 3. Baru
    */
   const id =
-    createRandomDeviceId();
+    createDeviceId();
 
   /*
-   * Simpan ke LocalStorage
+   * LocalStorage.
    */
   try {
-    window.localStorage.setItem(
-      key,
-      id
-    );
+    window.localStorage
+      .setItem(
+        key,
+        id
+      );
   } catch {
     // abaikan
   }
 
   /*
-   * Simpan juga ke cookie
+   * Cookie.
    */
   try {
     document.cookie =
-      `${key}=${encodeURIComponent(id)}; ` +
+      `${key}=${encodeURIComponent(
+        id
+      )}; ` +
       `Max-Age=31536000; ` +
       `Path=/; ` +
       `SameSite=Lax; ` +
@@ -171,11 +240,14 @@ function getDeviceId() {
    GPS
 ===================================================== */
 
-function getLocation(): Promise<LocationData> {
+function getLocation():
+  Promise<LocationData> {
   return new Promise(
-    (resolve, reject) => {
+    (
+      resolve,
+      reject
+    ) => {
       if (
-        typeof navigator === "undefined" ||
         !navigator.geolocation
       ) {
         reject(
@@ -187,64 +259,89 @@ function getLocation(): Promise<LocationData> {
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            latitude:
-              position.coords.latitude,
+      navigator.geolocation
+        .getCurrentPosition(
+          (
+            position
+          ) => {
+            resolve({
+              latitude:
+                position
+                  .coords
+                  .latitude,
 
-            longitude:
-              position.coords.longitude,
+              longitude:
+                position
+                  .coords
+                  .longitude,
 
-            accuracy:
-              position.coords.accuracy,
-          });
-        },
+              accuracy:
+                position
+                  .coords
+                  .accuracy,
+            });
+          },
 
-        (error) => {
-          if (error.code === 1) {
+          (
+            error
+          ) => {
+            if (
+              error.code ===
+              1
+            ) {
+              reject(
+                new Error(
+                  "Izin lokasi ditolak. Izinkan lokasi pada Safari lalu coba lagi."
+                )
+              );
+
+              return;
+            }
+
+            if (
+              error.code ===
+              2
+            ) {
+              reject(
+                new Error(
+                  "Lokasi tidak tersedia. Aktifkan Location Services lalu coba lagi."
+                )
+              );
+
+              return;
+            }
+
+            if (
+              error.code ===
+              3
+            ) {
+              reject(
+                new Error(
+                  "GPS terlalu lama merespons. Coba pindah ke area yang lebih terbuka lalu ulangi."
+                )
+              );
+
+              return;
+            }
+
             reject(
               new Error(
-                "Izin lokasi ditolak. Izinkan akses lokasi pada browser lalu coba kembali."
+                "Gagal membaca lokasi."
               )
             );
+          },
 
-            return;
+          {
+            enableHighAccuracy:
+              true,
+
+            timeout:
+              20000,
+
+            maximumAge:
+              0,
           }
-
-          if (error.code === 2) {
-            reject(
-              new Error(
-                "Lokasi tidak tersedia. Aktifkan GPS lalu coba kembali."
-              )
-            );
-
-            return;
-          }
-
-          if (error.code === 3) {
-            reject(
-              new Error(
-                "Pengambilan lokasi terlalu lama. Pastikan GPS aktif lalu coba kembali."
-              )
-            );
-
-            return;
-          }
-
-          reject(
-            new Error(
-              "Gagal mengambil lokasi."
-            )
-          );
-        },
-
-        {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0,
-        }
-      );
+        );
     }
   );
 }
@@ -255,33 +352,20 @@ function getLocation(): Promise<LocationData> {
 
 export default function PresensiForm({
   token,
-  qrCode,
+  initialInfo,
+  initialTicket,
 }: Props) {
-  const [
-    info,
-    setInfo,
-  ] =
-    useState<SessionInfo | null>(
-      null
-    );
+  const info =
+    initialInfo;
 
-  const [
-    ticket,
-    setTicket,
-  ] =
-    useState("");
+  const ticket =
+    initialTicket;
 
   const [
     npm,
     setNpm,
   ] =
     useState("");
-
-  const [
-    loading,
-    setLoading,
-  ] =
-    useState(true);
 
   const [
     sending,
@@ -302,194 +386,35 @@ export default function PresensiForm({
     useState("");
 
   const [
-    successDetail,
-    setSuccessDetail,
+    detail,
+    setDetail,
   ] =
     useState<{
-      name?: string;
-      distance?: number;
-      accuracy?: number;
-    } | null>(null);
+      name?:
+        string;
+
+      distance?:
+        number;
+
+      accuracy?:
+        number;
+    } | null>(
+      null
+    );
 
   /* =====================================================
-     VALIDASI QR
-
-     PERUBAHAN UTAMA:
-     Tidak membutuhkan deviceId.
-  ===================================================== */
-
-  useEffect(() => {
-    let mounted = true;
-
-    const controller =
-      new AbortController();
-
-    const timeout =
-      window.setTimeout(
-        () => {
-          controller.abort();
-        },
-        15000
-      );
-
-    async function validateQr() {
-      setLoading(true);
-      setMessage("");
-
-      try {
-        if (!qrCode) {
-          if (mounted) {
-            setMessage(
-              "QR tidak valid. Scan QR terbaru dari layar dosen."
-            );
-          }
-
-          return;
-        }
-
-        const params =
-          new URLSearchParams({
-            code: qrCode,
-          });
-
-        const response =
-          await fetch(
-            `/api/presensi/${encodeURIComponent(
-              token
-            )}?${params.toString()}`,
-            {
-              method: "GET",
-
-              cache: "no-store",
-
-              headers: {
-                Accept:
-                  "application/json",
-              },
-
-              signal:
-                controller.signal,
-            }
-          );
-
-        const text =
-          await response.text();
-
-        let result: any = {};
-
-        try {
-          result =
-            JSON.parse(text);
-        } catch {
-          throw new Error(
-            "Response server tidak valid."
-          );
-        }
-
-        if (!response.ok) {
-          throw new Error(
-            result.message ||
-              "QR tidak dapat divalidasi."
-          );
-        }
-
-        if (!mounted) {
-          return;
-        }
-
-        setInfo(
-          result.data
-        );
-
-        setTicket(
-          result.ticket
-        );
-      } catch (error: any) {
-        console.error(
-          "QR VALIDATION ERROR:",
-          error
-        );
-
-        if (!mounted) {
-          return;
-        }
-
-        if (
-          error?.name ===
-          "AbortError"
-        ) {
-          setMessage(
-            "Validasi QR terlalu lama. Periksa koneksi internet lalu scan QR terbaru."
-          );
-        } else {
-          setMessage(
-            error?.message ||
-              "Gagal memvalidasi QR."
-          );
-        }
-      } finally {
-        window.clearTimeout(
-          timeout
-        );
-
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void validateQr();
-
-    /*
-     * Watchdog tambahan.
-     *
-     * Walaupun Safari bermasalah,
-     * loading tidak boleh selamanya.
-     */
-    const watchdog =
-      window.setTimeout(
-        () => {
-          if (mounted) {
-            setLoading(false);
-
-            setMessage(
-              (current) =>
-                current ||
-                "Validasi QR gagal diselesaikan. Scan QR terbaru dan coba kembali."
-            );
-          }
-        },
-        18000
-      );
-
-    return () => {
-      mounted = false;
-
-      controller.abort();
-
-      window.clearTimeout(
-        timeout
-      );
-
-      window.clearTimeout(
-        watchdog
-      );
-    };
-  }, [
-    token,
-    qrCode,
-  ]);
-
-  /* =====================================================
-     KIRIM PRESENSI
+     SUBMIT
   ===================================================== */
 
   async function submit(
-    event: FormEvent<HTMLFormElement>
+    event:
+      FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
-    if (!npm.trim()) {
+    if (
+      !npm.trim()
+    ) {
       setMessage(
         "Masukkan NPM terlebih dahulu."
       );
@@ -497,61 +422,64 @@ export default function PresensiForm({
       return;
     }
 
-    if (!ticket) {
-      setMessage(
-        "Session QR sudah tidak valid. Scan QR terbaru kembali."
-      );
+    setSending(
+      true
+    );
 
-      return;
-    }
+    setSuccess(
+      false
+    );
 
-    setSending(true);
-    setSuccess(false);
-    setSuccessDetail(null);
+    setDetail(
+      null
+    );
+
     setMessage(
       "Menyiapkan perangkat..."
     );
 
     try {
       /*
-       * DEVICE ID BARU DIBUAT DI SINI.
-       *
-       * Jadi Safari tidak bisa lagi
-       * menghambat halaman validasi QR.
+       * Device ID hanya dibuat
+       * setelah tombol diklik.
        */
       const deviceId =
         getDeviceId();
 
-      if (!deviceId) {
+      if (
+        !deviceId
+      ) {
         throw new Error(
           "Gagal membuat identitas perangkat."
         );
       }
 
       /*
-       * Ambil GPS mahasiswa.
+       * GPS.
        */
       setMessage(
-        "Memeriksa lokasi Anda..."
+        "Meminta lokasi GPS..."
       );
 
       const location =
         await getLocation();
 
       setMessage(
-        `Lokasi ditemukan dengan akurasi ±${Math.round(
+        `Lokasi ditemukan. Akurasi ±${Math.round(
           location.accuracy
-        )} meter. Mengirim presensi...`
+        )} meter.`
       );
 
+      /*
+       * Request timeout.
+       */
       const controller =
         new AbortController();
 
       const timeout =
         window.setTimeout(
-          () => {
-            controller.abort();
-          },
+          () =>
+            controller.abort(),
           20000
         );
 
@@ -562,9 +490,11 @@ export default function PresensiForm({
               token
             )}`,
             {
-              method: "POST",
+              method:
+                "POST",
 
-              cache: "no-store",
+              cache:
+                "no-store",
 
               headers: {
                 "Content-Type":
@@ -579,9 +509,9 @@ export default function PresensiForm({
                   npm:
                     npm.trim(),
 
-                  deviceId,
-
                   ticket,
+
+                  deviceId,
 
                   latitude:
                     location.latitude,
@@ -601,55 +531,59 @@ export default function PresensiForm({
         const text =
           await response.text();
 
-        let result: any = {};
+        let result:
+          any;
 
         try {
           result =
-            JSON.parse(text);
+            JSON.parse(
+              text
+            );
         } catch {
           throw new Error(
-            "Response server tidak valid."
+            "Server memberikan response yang tidak valid."
           );
         }
 
-        if (!response.ok) {
+        if (
+          !response.ok
+        ) {
           throw new Error(
             result.message ||
               "Presensi gagal."
           );
         }
 
-        setSuccess(true);
+        setSuccess(
+          true
+        );
 
         setMessage(
           result.message ||
             "Presensi berhasil."
         );
 
-        setSuccessDetail({
+        setDetail({
           name:
-            result.student?.name,
+            result.student
+              ?.name,
 
           distance:
-            typeof result.distance ===
-            "number"
-              ? result.distance
-              : undefined,
+            result.distance,
 
           accuracy:
-            typeof result.accuracy ===
-            "number"
-              ? result.accuracy
-              : undefined,
+            result.accuracy,
         });
       } finally {
         window.clearTimeout(
           timeout
         );
       }
-    } catch (error: any) {
+    } catch (
+      error: any
+    ) {
       console.error(
-        "SUBMIT PRESENSI ERROR:",
+        "PRESENSI ERROR:",
         error
       );
 
@@ -658,89 +592,23 @@ export default function PresensiForm({
         "AbortError"
       ) {
         setMessage(
-          "Pengiriman terlalu lama. Periksa koneksi internet lalu coba kembali."
+          "Server terlalu lama merespons. Periksa koneksi internet."
         );
       } else {
         setMessage(
           error?.message ||
-            "Gagal mengirim presensi."
+            "Presensi gagal."
         );
       }
     } finally {
-      setSending(false);
+      setSending(
+        false
+      );
     }
   }
 
   /* =====================================================
-     LOADING
-  ===================================================== */
-
-  if (loading) {
-    return (
-      <section className="page">
-        <div
-          className="shell"
-          style={{
-            width: "100%",
-            maxWidth: 600,
-            margin: "0 auto",
-          }}
-        >
-          <div className="panel">
-            <div className="panel-body">
-              <h2>
-                Memvalidasi QR...
-              </h2>
-
-              <p className="muted">
-                Mohon tunggu sebentar.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  /* =====================================================
-     QR GAGAL
-  ===================================================== */
-
-  if (!info) {
-    return (
-      <section className="page">
-        <div
-          className="shell"
-          style={{
-            width: "100%",
-            maxWidth: 600,
-            margin: "0 auto",
-          }}
-        >
-          <div className="panel">
-            <div className="panel-body">
-              <h2>
-                Presensi Tidak Tersedia
-              </h2>
-
-              <p>
-                {message ||
-                  "QR tidak dapat divalidasi."}
-              </p>
-
-              <p className="muted">
-                Scan QR terbaru yang sedang
-                tampil di layar dosen.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  /* =====================================================
-     FORM PRESENSI
+     UI
   ===================================================== */
 
   return (
@@ -748,9 +616,14 @@ export default function PresensiForm({
       <div
         className="shell"
         style={{
-          width: "100%",
-          maxWidth: 600,
-          margin: "0 auto",
+          width:
+            "100%",
+
+          maxWidth:
+            600,
+
+          margin:
+            "0 auto",
         }}
       >
         <div className="hero">
@@ -760,12 +633,16 @@ export default function PresensiForm({
             </div>
 
             <h1>
-              {info.courseName}
+              {
+                info.courseName
+              }
             </h1>
 
             <p>
               Pertemuan{" "}
-              {info.meetingNo}
+              {
+                info.meetingNo
+              }
             </p>
           </div>
         </div>
@@ -775,59 +652,81 @@ export default function PresensiForm({
 
             <div
               style={{
-                marginBottom: 22,
+                marginBottom:
+                  22,
               }}
             >
               <p>
                 <strong>
                   Kelas:
                 </strong>{" "}
-                {info.className}
+                {
+                  info.className
+                }
               </p>
 
               <p>
                 <strong>
                   Dosen:
                 </strong>{" "}
-                {info.lecturer}
+                {
+                  info.lecturer
+                }
               </p>
 
               <p>
                 <strong>
                   Jadwal:
                 </strong>{" "}
-                {info.schedule || "-"}
+                {
+                  info.schedule ||
+                  "-"
+                }
               </p>
 
               <div
                 style={{
-                  marginTop: 14,
-                  padding: 14,
-                  borderRadius: 10,
-                  background: "#f1f5f9",
+                  marginTop:
+                    14,
+
+                  padding:
+                    14,
+
+                  borderRadius:
+                    10,
+
+                  background:
+                    "#f1f5f9",
                 }}
               >
                 📍{" "}
                 <strong>
-                  {info.campusName}
+                  {
+                    info.campusName
+                  }
                 </strong>
 
                 <br />
 
-                GPS wajib
+                Lokasi GPS wajib
 
                 <br />
 
                 Radius maksimal{" "}
                 <strong>
-                  {info.radiusMeters} meter
+                  {
+                    info.radiusMeters
+                  }{" "}
+                  meter
                 </strong>
               </div>
             </div>
 
             {!success ? (
               <form
-                onSubmit={submit}
+                onSubmit={
+                  submit
+                }
               >
                 <div className="field">
                   <label>
@@ -837,11 +736,17 @@ export default function PresensiForm({
                   <input
                     className="input"
 
-                    value={npm}
+                    value={
+                      npm
+                    }
 
-                    onChange={(event) =>
+                    onChange={(
+                      event
+                    ) =>
                       setNpm(
-                        event.target.value
+                        event
+                          .target
+                          .value
                       )
                     }
 
@@ -851,7 +756,9 @@ export default function PresensiForm({
 
                     inputMode="numeric"
 
-                    disabled={sending}
+                    disabled={
+                      sending
+                    }
                   />
                 </div>
 
@@ -860,12 +767,19 @@ export default function PresensiForm({
 
                   className="btn btn-primary"
 
-                  disabled={sending}
+                  disabled={
+                    sending
+                  }
 
                   style={{
-                    width: "100%",
-                    minHeight: 48,
-                    marginTop: 16,
+                    width:
+                      "100%",
+
+                    marginTop:
+                      16,
+
+                    minHeight:
+                      48,
                   }}
                 >
                   {sending
@@ -877,45 +791,52 @@ export default function PresensiForm({
               <div
                 className="success"
                 style={{
-                  marginTop: 16,
-                  padding: 16,
+                  padding:
+                    16,
+
+                  marginTop:
+                    16,
                 }}
               >
                 <strong>
-                  ✓ Presensi berhasil
+                  ✓ Presensi Berhasil
                 </strong>
 
-                {successDetail?.name && (
+                {detail?.name && (
                   <div
                     style={{
-                      marginTop: 8,
+                      marginTop:
+                        8,
                     }}
                   >
-                    {successDetail.name}
+                    {
+                      detail.name
+                    }
                   </div>
                 )}
 
-                {typeof successDetail?.distance ===
+                {typeof detail?.distance ===
                   "number" && (
                   <div
                     style={{
-                      marginTop: 5,
+                      marginTop:
+                        6,
                     }}
                   >
                     Jarak dari kampus:{" "}
                     {
-                      successDetail.distance
+                      detail.distance
                     }{" "}
                     meter
                   </div>
                 )}
 
-                {typeof successDetail?.accuracy ===
+                {typeof detail?.accuracy ===
                   "number" && (
                   <div>
                     Akurasi GPS: ±
                     {
-                      successDetail.accuracy
+                      detail.accuracy
                     }{" "}
                     meter
                   </div>
@@ -931,10 +852,13 @@ export default function PresensiForm({
                     : "error"
                 }
                 style={{
-                  marginTop: 16,
+                  marginTop:
+                    16,
                 }}
               >
-                {message}
+                {
+                  message
+                }
               </div>
             )}
 
