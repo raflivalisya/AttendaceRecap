@@ -1,52 +1,31 @@
 "use client";
 
 import {
-  FormEvent,
   useState,
 } from "react";
 
 type SessionInfo = {
   meetingNo: number;
-
   meetingDate: string;
-
   courseName: string;
-
   className: string;
-
   lecturer: string;
-
   schedule: string;
-
   endsAt: string;
-
-  radiusMeters:
-    number;
-
-  campusName:
-    string;
+  radiusMeters: number;
+  campusName: string;
 };
 
 type Props = {
-  token:
-    string;
-
-  initialInfo:
-    SessionInfo;
-
-  initialTicket:
-    string;
+  token: string;
+  initialInfo: SessionInfo;
+  initialTicket: string;
 };
 
 type LocationData = {
-  latitude:
-    number;
-
-  longitude:
-    number;
-
-  accuracy:
-    number;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
 };
 
 /* =====================================================
@@ -56,8 +35,7 @@ type LocationData = {
 function createDeviceId() {
   try {
     if (
-      typeof window !==
-        "undefined" &&
+      typeof window !== "undefined" &&
       window.crypto
     ) {
       if (
@@ -72,38 +50,25 @@ function createDeviceId() {
         "function"
       ) {
         const values =
-          new Uint32Array(
-            4
-          );
+          new Uint32Array(4);
 
-        window.crypto
-          .getRandomValues(
-            values
-          );
-
-        return Array.from(
+        window.crypto.getRandomValues(
           values
-        )
-          .map(
-            (
-              value
-            ) =>
-              value.toString(
-                16
-              )
+        );
+
+        return Array.from(values)
+          .map((value) =>
+            value.toString(16)
           )
-          .join(
-            "-"
-          );
+          .join("-");
       }
     }
   } catch {
-    // fallback
+    // fallback di bawah
   }
 
   return (
-    Date.now()
-      .toString(36) +
+    Date.now().toString(36) +
     "-" +
     Math.random()
       .toString(36)
@@ -143,22 +108,28 @@ function getCookie(
           prefix
         )
       ) {
-        return decodeURIComponent(
-          cookie.slice(
+        try {
+          return decodeURIComponent(
+            cookie.slice(
+              prefix.length
+            )
+          );
+        } catch {
+          return cookie.slice(
             prefix.length
-          )
-        );
+          );
+        }
       }
     }
   } catch {
-    return null;
+    // abaikan
   }
 
   return null;
 }
 
 /* =====================================================
-   DEVICE
+   GET DEVICE ID
 ===================================================== */
 
 function getDeviceId() {
@@ -166,65 +137,59 @@ function getDeviceId() {
     "attendance_device_id";
 
   /*
-   * 1. Cookie
+   * Coba cookie.
    */
   try {
-    const cookie =
-      getCookie(
-        key
-      );
+    const cookieId =
+      getCookie(key);
 
-    if (cookie) {
-      return cookie;
+    if (cookieId) {
+      return cookieId;
     }
   } catch {
     // lanjut
   }
 
   /*
-   * 2. LocalStorage
+   * Coba localStorage.
    */
   try {
     const stored =
-      window.localStorage
-        .getItem(
-          key
-        );
+      window.localStorage.getItem(
+        key
+      );
 
     if (stored) {
       return stored;
     }
   } catch {
-    // Safari Private
+    // Safari Private Mode bisa membatasi storage.
   }
 
   /*
-   * 3. Baru
+   * Generate ID baru.
    */
   const id =
     createDeviceId();
 
   /*
-   * LocalStorage.
+   * Simpan ke localStorage.
    */
   try {
-    window.localStorage
-      .setItem(
-        key,
-        id
-      );
+    window.localStorage.setItem(
+      key,
+      id
+    );
   } catch {
     // abaikan
   }
 
   /*
-   * Cookie.
+   * Simpan ke cookie.
    */
   try {
     document.cookie =
-      `${key}=${encodeURIComponent(
-        id
-      )}; ` +
+      `${key}=${encodeURIComponent(id)}; ` +
       `Max-Age=31536000; ` +
       `Path=/; ` +
       `SameSite=Lax; ` +
@@ -248,6 +213,8 @@ function getLocation():
       reject
     ) => {
       if (
+        typeof navigator ===
+          "undefined" ||
         !navigator.geolocation
       ) {
         reject(
@@ -261,37 +228,30 @@ function getLocation():
 
       navigator.geolocation
         .getCurrentPosition(
-          (
-            position
-          ) => {
+          (position) => {
             resolve({
               latitude:
-                position
-                  .coords
+                position.coords
                   .latitude,
 
               longitude:
-                position
-                  .coords
+                position.coords
                   .longitude,
 
               accuracy:
-                position
-                  .coords
+                position.coords
                   .accuracy,
             });
           },
 
-          (
-            error
-          ) => {
+          (error) => {
             if (
               error.code ===
               1
             ) {
               reject(
                 new Error(
-                  "Izin lokasi ditolak. Izinkan lokasi pada Safari lalu coba lagi."
+                  "Izin lokasi ditolak. Izinkan akses lokasi pada Safari lalu coba kembali."
                 )
               );
 
@@ -304,7 +264,7 @@ function getLocation():
             ) {
               reject(
                 new Error(
-                  "Lokasi tidak tersedia. Aktifkan Location Services lalu coba lagi."
+                  "Lokasi tidak tersedia. Aktifkan Location Services lalu coba kembali."
                 )
               );
 
@@ -317,7 +277,7 @@ function getLocation():
             ) {
               reject(
                 new Error(
-                  "GPS terlalu lama merespons. Coba pindah ke area yang lebih terbuka lalu ulangi."
+                  "Pengambilan lokasi terlalu lama. Pastikan GPS aktif lalu coba kembali."
                 )
               );
 
@@ -326,7 +286,7 @@ function getLocation():
 
             reject(
               new Error(
-                "Gagal membaca lokasi."
+                "Gagal membaca lokasi perangkat."
               )
             );
           },
@@ -390,31 +350,29 @@ export default function PresensiForm({
     setDetail,
   ] =
     useState<{
-      name?:
-        string;
-
-      distance?:
-        number;
-
-      accuracy?:
-        number;
+      name?: string;
+      distance?: number;
+      accuracy?: number;
     } | null>(
       null
     );
 
   /* =====================================================
-     SUBMIT
+     KIRIM PRESENSI
+
+     Tidak memakai <form>.
+     Safari tidak bisa melakukan native submit.
   ===================================================== */
 
-  async function submit(
-    event:
-      FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
+  async function submitPresensi() {
+    if (sending) {
+      return;
+    }
 
-    if (
-      !npm.trim()
-    ) {
+    const cleanNpm =
+      npm.trim();
+
+    if (!cleanNpm) {
       setMessage(
         "Masukkan NPM terlebih dahulu."
       );
@@ -422,41 +380,40 @@ export default function PresensiForm({
       return;
     }
 
-    setSending(
-      true
-    );
+    if (!ticket) {
+      setMessage(
+        "Ticket presensi tidak tersedia. Scan QR terbaru kembali."
+      );
 
-    setSuccess(
-      false
-    );
+      return;
+    }
 
-    setDetail(
-      null
-    );
-
-    setMessage(
-      "Menyiapkan perangkat..."
-    );
+    setSending(true);
+    setSuccess(false);
+    setDetail(null);
 
     try {
-      /*
-       * Device ID hanya dibuat
-       * setelah tombol diklik.
-       */
+      /* ==============================
+         DEVICE ID
+      ============================== */
+
+      setMessage(
+        "Menyiapkan perangkat..."
+      );
+
       const deviceId =
         getDeviceId();
 
-      if (
-        !deviceId
-      ) {
+      if (!deviceId) {
         throw new Error(
-          "Gagal membuat identitas perangkat."
+          "Identitas perangkat gagal dibuat."
         );
       }
 
-      /*
-       * GPS.
-       */
+      /* ==============================
+         GPS
+      ============================== */
+
       setMessage(
         "Meminta lokasi GPS..."
       );
@@ -470,16 +427,18 @@ export default function PresensiForm({
         )} meter.`
       );
 
-      /*
-       * Request timeout.
-       */
+      /* ==============================
+         REQUEST
+      ============================== */
+
       const controller =
         new AbortController();
 
       const timeout =
         window.setTimeout(
-          () =>
-            controller.abort(),
+          () => {
+            controller.abort();
+          },
           20000
         );
 
@@ -507,7 +466,7 @@ export default function PresensiForm({
               body:
                 JSON.stringify({
                   npm:
-                    npm.trim(),
+                    cleanNpm,
 
                   ticket,
 
@@ -528,35 +487,50 @@ export default function PresensiForm({
             }
           );
 
-        const text =
+        /*
+         * Baca text dahulu.
+         * Lebih aman di Safari.
+         */
+        const responseText =
           await response.text();
 
         let result:
-          any;
+          any = {};
 
         try {
           result =
             JSON.parse(
-              text
+              responseText
             );
         } catch {
+          console.error(
+            "RAW RESPONSE:",
+            responseText
+          );
+
           throw new Error(
-            "Server memberikan response yang tidak valid."
+            "Server memberikan respons yang tidak valid."
           );
         }
 
-        if (
-          !response.ok
-        ) {
+        console.log(
+          "PRESENSI RESPONSE:",
+          response.status,
+          result
+        );
+
+        if (!response.ok) {
           throw new Error(
             result.message ||
-              "Presensi gagal."
+              `Presensi gagal (${response.status}).`
           );
         }
 
-        setSuccess(
-          true
-        );
+        /* ==============================
+           SUCCESS
+        ============================== */
+
+        setSuccess(true);
 
         setMessage(
           result.message ||
@@ -569,10 +543,16 @@ export default function PresensiForm({
               ?.name,
 
           distance:
-            result.distance,
+            typeof result.distance ===
+            "number"
+              ? result.distance
+              : undefined,
 
           accuracy:
-            result.accuracy,
+            typeof result.accuracy ===
+            "number"
+              ? result.accuracy
+              : undefined,
         });
       } finally {
         window.clearTimeout(
@@ -592,7 +572,7 @@ export default function PresensiForm({
         "AbortError"
       ) {
         setMessage(
-          "Server terlalu lama merespons. Periksa koneksi internet."
+          "Server terlalu lama merespons. Periksa koneksi internet lalu coba kembali."
         );
       } else {
         setMessage(
@@ -601,9 +581,7 @@ export default function PresensiForm({
         );
       }
     } finally {
-      setSending(
-        false
-      );
+      setSending(false);
     }
   }
 
@@ -626,6 +604,10 @@ export default function PresensiForm({
             "0 auto",
         }}
       >
+        {/* ==============================
+            HEADER
+        ============================== */}
+
         <div className="hero">
           <div>
             <div className="eyebrow">
@@ -633,22 +615,26 @@ export default function PresensiForm({
             </div>
 
             <h1>
-              {
-                info.courseName
-              }
+              {info.courseName}
             </h1>
 
             <p>
               Pertemuan{" "}
-              {
-                info.meetingNo
-              }
+              {info.meetingNo}
             </p>
           </div>
         </div>
 
+        {/* ==============================
+            PANEL
+        ============================== */}
+
         <div className="panel">
           <div className="panel-body">
+
+            {/* ==========================
+                INFORMASI
+            ========================== */}
 
             <div
               style={{
@@ -660,28 +646,22 @@ export default function PresensiForm({
                 <strong>
                   Kelas:
                 </strong>{" "}
-                {
-                  info.className
-                }
+                {info.className}
               </p>
 
               <p>
                 <strong>
                   Dosen:
                 </strong>{" "}
-                {
-                  info.lecturer
-                }
+                {info.lecturer}
               </p>
 
               <p>
                 <strong>
                   Jadwal:
                 </strong>{" "}
-                {
-                  info.schedule ||
-                  "-"
-                }
+                {info.schedule ||
+                  "-"}
               </p>
 
               <div
@@ -701,9 +681,7 @@ export default function PresensiForm({
               >
                 📍{" "}
                 <strong>
-                  {
-                    info.campusName
-                  }
+                  {info.campusName}
                 </strong>
 
                 <br />
@@ -722,33 +700,35 @@ export default function PresensiForm({
               </div>
             </div>
 
-            {!success ? (
-              <form
-                onSubmit={
-                  submit
-                }
-              >
+            {/* ==========================
+                INPUT
+            ========================== */}
+
+            {!success && (
+              <>
                 <div className="field">
-                  <label>
+                  <label
+                    htmlFor="npm"
+                  >
                     NPM
                   </label>
 
                   <input
+                    id="npm"
+
+                    type="text"
+
                     className="input"
 
-                    value={
-                      npm
-                    }
+                    value={npm}
 
                     onChange={(
                       event
-                    ) =>
+                    ) => {
                       setNpm(
-                        event
-                          .target
-                          .value
-                      )
-                    }
+                        event.target.value
+                      );
+                    }}
 
                     placeholder="Masukkan NPM"
 
@@ -756,20 +736,35 @@ export default function PresensiForm({
 
                     inputMode="numeric"
 
+                    enterKeyHint="done"
+
                     disabled={
                       sending
                     }
+
+                    style={{
+                      fontSize:
+                        16,
+                    }}
                   />
                 </div>
 
+                {/* ======================
+                    BUKAN submit button
+                ====================== */}
+
                 <button
-                  type="submit"
+                  type="button"
 
                   className="btn btn-primary"
 
                   disabled={
                     sending
                   }
+
+                  onClick={() => {
+                    void submitPresensi();
+                  }}
 
                   style={{
                     width:
@@ -780,14 +775,23 @@ export default function PresensiForm({
 
                     minHeight:
                       48,
+
+                    touchAction:
+                      "manipulation",
                   }}
                 >
                   {sending
                     ? "Memeriksa..."
                     : "Kirim Presensi"}
                 </button>
-              </form>
-            ) : (
+              </>
+            )}
+
+            {/* ==========================
+                SUCCESS
+            ========================== */}
+
+            {success && (
               <div
                 className="success"
                 style={{
@@ -796,6 +800,9 @@ export default function PresensiForm({
 
                   marginTop:
                     16,
+
+                  borderRadius:
+                    10,
                 }}
               >
                 <strong>
@@ -809,9 +816,7 @@ export default function PresensiForm({
                         8,
                     }}
                   >
-                    {
-                      detail.name
-                    }
+                    {detail.name}
                   </div>
                 )}
 
@@ -833,7 +838,12 @@ export default function PresensiForm({
 
                 {typeof detail?.accuracy ===
                   "number" && (
-                  <div>
+                  <div
+                    style={{
+                      marginTop:
+                        3,
+                    }}
+                  >
                     Akurasi GPS: ±
                     {
                       detail.accuracy
@@ -843,6 +853,10 @@ export default function PresensiForm({
                 )}
               </div>
             )}
+
+            {/* ==========================
+                MESSAGE
+            ========================== */}
 
             {message && (
               <div
@@ -854,11 +868,15 @@ export default function PresensiForm({
                 style={{
                   marginTop:
                     16,
+
+                  padding:
+                    12,
+
+                  borderRadius:
+                    8,
                 }}
               >
-                {
-                  message
-                }
+                {message}
               </div>
             )}
 
