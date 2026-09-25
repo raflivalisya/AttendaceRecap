@@ -273,7 +273,7 @@ const [
         () => {
           void fetchQr();
         },
-        30_000
+        60_000
       );
 
     return () => {
