@@ -503,30 +503,133 @@ const canManageSelectedGrades =
       return;
     }
 
+    const selectedLecturer = lecturers.find(
+      (lecturer) => lecturer.user_id === newCourse.lecturer_user_id,
+    );
+
+    if (!selectedLecturer) {
+      notify("Dosen pengampu tidak ditemukan. Muat ulang daftar dosen lalu coba lagi.");
+      return;
+    }
+
+    const meetingCount = Math.max(1, Math.min(40, Number(newCourse.meeting_count) || 16));
+    const minimumAttendance = Math.max(
+      0,
+      Math.min(100, Number(newCourse.min_attendance_pct) || 80),
+    );
+
     setSaving(true);
     setMessage("");
 
+    let createdCourseId = "";
+
     try {
-      const response = await fetch("/api/admin/courses", {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(newCourse),
-      });
+      // 1. Buat mata kuliah langsung melalui Supabase.
+      // Tidak lagi menggunakan POST /api/admin/courses sehingga tidak tergantung route API.
+      const { data: createdCourse, error: courseError } = await supabase
+        .from("courses")
+        .insert({
+          name: newCourse.name.trim(),
+          class_name: newCourse.class_name.trim(),
+          lecturer: selectedLecturer.display_name,
+          schedule: newCourse.schedule.trim(),
+          semester: newCourse.semester.trim(),
+          academic_year: newCourse.academic_year.trim(),
+          meeting_count: meetingCount,
+          min_attendance_pct: minimumAttendance,
+          publish_grades: false,
+        })
+        .select("*")
+        .single();
 
-      const result = await readApiJson(response);
-
-      if (!response.ok) {
-        throw new Error(result.message || "Gagal menambah mata kuliah.");
+      if (courseError || !createdCourse) {
+        throw new Error(
+          `Gagal membuat mata kuliah: ${courseError?.message ?? "data course tidak dikembalikan"}`,
+        );
       }
 
-      const course = result.course as Course;
-      const createdMeetings = (result.meetings ?? []) as Meeting[];
-      const createdAssessments = (result.assessments ?? []) as Assessment[];
+      const course = createdCourse as Course;
+      createdCourseId = course.id;
+
+      // 2. Assign dosen pengampu ke kelas.
+      const { error: memberError } = await supabase
+        .from("course_members")
+        .upsert(
+          {
+            course_id: course.id,
+            user_id: selectedLecturer.user_id,
+            role: "lecturer",
+          },
+          { onConflict: "course_id,user_id" },
+        );
+
+      if (memberError) {
+        throw new Error(`Gagal memberikan akses kelas ke dosen: ${memberError.message}`);
+      }
+
+      // 3. Buat jadwal mingguan otomatis.
+      const meetingRows = Array.from({ length: meetingCount }, (_, index) => ({
+        course_id: course.id,
+        meeting_no: index + 1,
+        meeting_date: addDays(newCourse.start_date, index * 7),
+      }));
+
+      const { data: createdMeetingsData, error: meetingError } = await supabase
+        .from("meetings")
+        .insert(meetingRows)
+        .select("*");
+
+      if (meetingError) {
+        throw new Error(`Gagal membuat jadwal pertemuan: ${meetingError.message}`);
+      }
+
+      // 4. Buat komponen nilai default.
+      const assessmentRows = [
+        {
+          course_id: course.id,
+          name: "Tugas",
+          category: "Tugas",
+          max_score: 100,
+          weight: 25,
+          sort_order: 1,
+        },
+        {
+          course_id: course.id,
+          name: "Quiz",
+          category: "Quiz",
+          max_score: 100,
+          weight: 15,
+          sort_order: 2,
+        },
+        {
+          course_id: course.id,
+          name: "UTS",
+          category: "UTS",
+          max_score: 100,
+          weight: 25,
+          sort_order: 3,
+        },
+        {
+          course_id: course.id,
+          name: "UAS",
+          category: "UAS",
+          max_score: 100,
+          weight: 35,
+          sort_order: 4,
+        },
+      ];
+
+      const { data: createdAssessmentsData, error: assessmentError } = await supabase
+        .from("assessments")
+        .insert(assessmentRows)
+        .select("*");
+
+      if (assessmentError) {
+        throw new Error(`Gagal membuat komponen nilai: ${assessmentError.message}`);
+      }
+
+      const createdMeetings = (createdMeetingsData ?? []) as Meeting[];
+      const createdAssessments = (createdAssessmentsData ?? []) as Assessment[];
 
       setCourses((items) => [...items, course]);
       setMeetings((items) => [...items, ...createdMeetings]);
@@ -534,11 +637,13 @@ const canManageSelectedGrades =
 
       setLecturers((items) =>
         items.map((lecturer) =>
-          lecturer.user_id === newCourse.lecturer_user_id
+          lecturer.user_id === selectedLecturer.user_id
             ? {
                 ...lecturer,
                 course_count: lecturer.course_count + 1,
-                course_ids: [...lecturer.course_ids, course.id],
+                course_ids: lecturer.course_ids.includes(course.id)
+                  ? lecturer.course_ids
+                  : [...lecturer.course_ids, course.id],
               }
             : lecturer,
         ),
@@ -548,16 +653,26 @@ const canManageSelectedGrades =
       setShowAddCourse(false);
       setSelectedCourseId(course.id);
       setCourseDraft(course);
+      setCourseLecturerUserId(selectedLecturer.user_id);
       setTab("attendance");
 
-      const firstMeeting = createdMeetings[0]?.id ?? "";
+      const firstMeeting = createdMeetings
+        .slice()
+        .sort((a, b) => a.meeting_no - b.meeting_no)[0]?.id ?? "";
+
       setSelectedMeetingId(firstMeeting);
       setAttendanceDraft({});
 
       notify(
-        "Mata kuliah berhasil dibuat dan otomatis diberikan kepada dosen pengampu.",
+        "Mata kuliah berhasil dibuat, jadwal dan komponen nilai dibuat otomatis, serta akses dosen sudah diberikan.",
       );
     } catch (error: any) {
+      // Rollback course jika proses turunan gagal. Relasi yang memakai ON DELETE CASCADE
+      // akan ikut dibersihkan oleh database.
+      if (createdCourseId) {
+        await supabase.from("courses").delete().eq("id", createdCourseId);
+      }
+
       notify(error?.message || "Gagal menambah mata kuliah.");
     } finally {
       setSaving(false);
