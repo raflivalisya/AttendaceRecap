@@ -23,6 +23,8 @@ import AttendanceQR from "@/components/admin/AttendanceQR";
 import ExportGradesExcel from "@/components/admin/ExportGradesExcel";
 
 import LecturerManager from "@/components/admin/LecturerManager";
+import AdminAnalyticsDashboard from "@/components/admin/AdminAnalyticsDashboard";
+import AttendanceLiveMonitor from "@/components/admin/AttendanceLiveMonitor";
 
 import type { LecturerAccount } from "@/lib/auth/lecturers";
 
@@ -145,6 +147,8 @@ export default function AdminPanel(props: Props) {
   const [loadingLecturers, setLoadingLecturers] = useState(false);
 
   const [showLecturerManager, setShowLecturerManager] = useState(false);
+
+  const [showAnalytics, setShowAnalytics] = useState(true);
 
   const [courseLecturerUserId, setCourseLecturerUserId] = useState("");
 
@@ -1208,8 +1212,24 @@ async function refreshAttendance() {
 
 </div>
 
-    {access.isSuperAdmin && (
-      <div style={{ marginTop: 16, marginBottom: 18 }}>
+    <div
+      style={{
+        marginTop: 16,
+        marginBottom: 18,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 10,
+      }}
+    >
+      <button
+        type="button"
+        className={showAnalytics ? "btn btn-primary" : "btn btn-secondary"}
+        onClick={() => setShowAnalytics((value) => !value)}
+      >
+        {showAnalytics ? "Tutup Dashboard" : "📊 Dashboard Analitik"}
+      </button>
+
+      {access.isSuperAdmin && (
         <button
           type="button"
           className="btn btn-secondary"
@@ -1217,7 +1237,18 @@ async function refreshAttendance() {
         >
           {showLecturerManager ? "Tutup Kelola Dosen" : "👨‍🏫 Kelola Dosen & Akun"}
         </button>
-      </div>
+      )}
+    </div>
+
+    {showAnalytics && (
+      <AdminAnalyticsDashboard
+        courses={visibleCourses}
+        students={students}
+        meetings={meetings}
+        attendance={attendance}
+        assessments={assessments}
+        grades={grades}
+      />
     )}
 
     {access.isSuperAdmin && showLecturerManager && (
@@ -1311,20 +1342,43 @@ async function refreshAttendance() {
             <button className="btn btn-secondary" disabled={!canManageSelectedAttendance} onClick={() => { const x: Record<string, StatusValue> = {}; courseStudents.forEach((s) => x[s.id] = ""); setAttendanceDraft(x); }}>Kosongkan</button><button className="btn btn-primary" onClick={saveAttendance} disabled={saving || !selectedMeetingId || !canManageSelectedAttendance}>{saving ? "Menyimpan..." : "Simpan Absensi"}</button></div></div>
 
               {selectedMeeting && selectedCourse && canManageSelectedAttendance && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                    gap: 16,
+                    alignItems: "start",
+                    marginBottom: 18,
+                  }}
+                >
+                  <AttendanceQR
+                    meetingId={selectedMeeting.id}
+                    meetingNo={selectedMeeting.meeting_no}
+                    courseName={selectedCourse.name}
+                    classLabel={selectedCourse.class_name}
+                  />
 
-  <AttendanceQR
+                  <AttendanceLiveMonitor
+                    meetingId={selectedMeeting.id}
+                    students={courseStudents}
+                    onAttendanceChange={(rows) => {
+                      setAttendance((items) => [
+                        ...items.filter(
+                          (item) => item.meeting_id !== selectedMeeting.id,
+                        ),
+                        ...rows,
+                      ]);
 
-    meetingId={selectedMeeting.id}
-
-    meetingNo={selectedMeeting.meeting_no}
-
-    courseName={selectedCourse.name}
-
-    classLabel={selectedCourse.class_name}
-
-  />
-
-)}
+                      const nextDraft: Record<string, StatusValue> = {};
+                      courseStudents.forEach((student) => {
+                        nextDraft[student.id] =
+                          rows.find((row) => row.student_id === student.id)?.status ?? "";
+                      });
+                      setAttendanceDraft(nextDraft);
+                    }}
+                  />
+                </div>
+              )}
 
               <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama Mahasiswa</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} disabled={!canManageSelectedAttendance} onChange={(e) => setAttendanceDraft((d) => ({ ...d, [student.id]: e.target.value as StatusValue }))}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((key) => <option key={key} value={key}>{key} — {STATUS_LABELS[key]}</option>)}</select></td></tr>)}</tbody></table>{courseStudents.length === 0 && <div className="empty-state">Tambahkan mahasiswa terlebih dahulu pada tab Mahasiswa.</div>}</div>
 
