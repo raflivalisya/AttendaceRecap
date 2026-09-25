@@ -32,7 +32,7 @@ export default function LoginForm() {
         <form className="login-card" onSubmit={handleSubmit}>
           <div className="eyebrow">Administrator</div>
           <h1>Masuk ke Panel Admin</h1>
-          <p className="muted">Gunakan akun yang sudah dibuat di Supabase Auth dan didaftarkan pada tabel <code>admin_profiles</code>.</p>
+          <p className="muted">Gunakan akun yang sudah dibuat dibuat oleh Super Admin<code>admin_profiles</code>.</p>
           <div className="field" style={{ marginTop: 20 }}><label>Email</label><input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="admin@kampus.ac.id" /></div>
           <div className="field" style={{ marginTop: 12 }}><label>Password</label><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" /></div>
           {error && <div className="error" style={{ marginTop: 12 }}>{error}</div>}
