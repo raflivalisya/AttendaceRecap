@@ -4,25 +4,47 @@ import { cookies } from "next/headers";
 export async function createClient() {
   const cookieStore = await cookies();
 
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.SUPABASE_URL;
+
+  const supabaseKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error(
+      "Supabase URL tidak ditemukan. Periksa Environment Variables Vercel."
+    );
+  }
+
+  if (!supabaseKey) {
+    throw new Error(
+      "Supabase Publishable Key tidak ditemukan. Periksa Environment Variables Vercel."
+    );
+  }
+
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    supabaseUrl,
+    supabaseKey,
     {
       cookies: {
         getAll() {
           return cookieStore.getAll();
         },
+
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
+            cookiesToSet.forEach(
+              ({ name, value, options }) =>
+                cookieStore.set(name, value, options)
             );
           } catch {
-            // Server Components cannot always write cookies.
-            // proxy.ts refreshes the session when needed.
+            // Server Component tidak selalu boleh menulis cookies.
           }
         },
       },
-    },
+    }
   );
 }
