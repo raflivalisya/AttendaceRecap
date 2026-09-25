@@ -8,6 +8,7 @@ import {
 
 type Props = {
   token: string;
+  qrCode: string;
 };
 
 type SessionInfo = {
@@ -18,46 +19,140 @@ type SessionInfo = {
   lecturer: string;
   schedule: string;
   endsAt: string;
+
+  requireLocation:
+    boolean;
+
+  radiusMeters:
+    number;
 };
+
+type LocationData = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+};
+
+function getDeviceId() {
+  const key =
+    "attendance_device_id";
+
+  let id =
+    localStorage.getItem(
+      key
+    );
+
+  if (!id) {
+    id =
+      crypto.randomUUID();
+
+    localStorage.setItem(
+      key,
+      id
+    );
+  }
+
+  return id;
+}
 
 export default function PresensiForm({
   token,
+  qrCode,
 }: Props) {
-  const [info, setInfo] =
+  const [
+    info,
+    setInfo,
+  ] =
     useState<SessionInfo | null>(
       null
     );
 
-  const [npm, setNpm] =
+  const [
+    ticket,
+    setTicket,
+  ] =
     useState("");
 
-  const [message, setMessage] =
+  const [
+    deviceId,
+    setDeviceId,
+  ] =
     useState("");
 
-  const [success, setSuccess] =
+  const [
+    npm,
+    setNpm,
+  ] =
+    useState("");
+
+  const [
+    message,
+    setMessage,
+  ] =
+    useState("");
+
+  const [
+    success,
+    setSuccess,
+  ] =
     useState(false);
 
-  const [loading, setLoading] =
+  const [
+    loading,
+    setLoading,
+  ] =
     useState(true);
 
-  const [sending, setSending] =
+  const [
+    sending,
+    setSending,
+  ] =
     useState(false);
 
   useEffect(() => {
-    async function loadSession() {
+    setDeviceId(
+      getDeviceId()
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!deviceId) {
+      return;
+    }
+
+    async function validateQr() {
       try {
+        if (!qrCode) {
+          setMessage(
+            "QR tidak valid. Scan QR dari layar dosen."
+          );
+
+          return;
+        }
+
+        const params =
+          new URLSearchParams({
+            code:
+              qrCode,
+
+            deviceId,
+          });
+
         const response =
           await fetch(
-            `/api/presensi/${token}`,
+            `/api/presensi/${token}?${params.toString()}`,
             {
-              cache: "no-store",
+              cache:
+                "no-store",
             }
           );
 
         const result =
           await response.json();
 
-        if (!response.ok) {
+        if (
+          !response.ok
+        ) {
           setMessage(
             result.message ||
               "Presensi tidak tersedia."
@@ -66,18 +161,96 @@ export default function PresensiForm({
           return;
         }
 
-        setInfo(result.data);
+        setInfo(
+          result.data
+        );
+
+        setTicket(
+          result.ticket
+        );
       } catch {
         setMessage(
-          "Gagal memuat presensi."
+          "Gagal memvalidasi QR."
         );
       } finally {
-        setLoading(false);
+        setLoading(
+          false
+        );
       }
     }
 
-    loadSession();
-  }, [token]);
+    validateQr();
+  }, [
+    token,
+    qrCode,
+    deviceId,
+  ]);
+
+  function getLocation():
+    Promise<LocationData> {
+    return new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+        if (
+          !navigator
+            .geolocation
+        ) {
+          reject(
+            new Error(
+              "Browser tidak mendukung GPS."
+            )
+          );
+
+          return;
+        }
+
+        navigator.geolocation
+          .getCurrentPosition(
+            (
+              position
+            ) => {
+              resolve({
+                latitude:
+                  position
+                    .coords
+                    .latitude,
+
+                longitude:
+                  position
+                    .coords
+                    .longitude,
+
+                accuracy:
+                  position
+                    .coords
+                    .accuracy,
+              });
+            },
+
+            () => {
+              reject(
+                new Error(
+                  "Lokasi gagal diambil. Aktifkan GPS dan izinkan akses lokasi pada browser."
+                )
+              );
+            },
+
+            {
+              enableHighAccuracy:
+                true,
+
+              timeout:
+                15000,
+
+              maximumAge:
+                0,
+            }
+          );
+      }
+    );
+  }
 
   async function submit(
     event: FormEvent
@@ -92,24 +265,67 @@ export default function PresensiForm({
       return;
     }
 
+    if (!ticket) {
+      setMessage(
+        "Sesi QR sudah tidak valid. Scan ulang QR."
+      );
+
+      return;
+    }
+
     setSending(true);
     setMessage("");
 
     try {
+      let location:
+        | LocationData
+        | null = null;
+
+      if (
+        info
+          ?.requireLocation
+      ) {
+        setMessage(
+          "Memeriksa lokasi..."
+        );
+
+        location =
+          await getLocation();
+      }
+
       const response =
         await fetch(
           `/api/presensi/${token}`,
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
                 "application/json",
             },
 
-            body: JSON.stringify({
-              npm: npm.trim(),
-            }),
+            body:
+              JSON.stringify({
+                npm:
+                  npm.trim(),
+
+                deviceId,
+
+                ticket,
+
+                latitude:
+                  location
+                    ?.latitude,
+
+                longitude:
+                  location
+                    ?.longitude,
+
+                accuracy:
+                  location
+                    ?.accuracy,
+              }),
           }
         );
 
@@ -120,25 +336,40 @@ export default function PresensiForm({
         result.message
       );
 
-      if (response.ok) {
-        setSuccess(true);
+      if (
+        response.ok
+      ) {
+        setSuccess(
+          true
+        );
       }
-    } catch {
+    } catch (
+      error: any
+    ) {
       setMessage(
-        "Gagal mengirim presensi."
+        error?.message ||
+          "Gagal mengirim presensi."
       );
     } finally {
-      setSending(false);
+      setSending(
+        false
+      );
     }
   }
 
   if (loading) {
     return (
       <section className="page">
-        <div className="shell">
+        <div
+          className="shell"
+          style={{
+            maxWidth:
+              600,
+          }}
+        >
           <div className="panel">
             <div className="panel-body">
-              Memuat presensi...
+              Memvalidasi QR...
             </div>
           </div>
         </div>
@@ -150,13 +381,15 @@ export default function PresensiForm({
     return (
       <section className="page">
         <div
-  className="shell"
-  style={{
-    width: "100%",
-    maxWidth: 600,
-    margin: "0 auto",
-  }}
->
+          className="shell"
+          style={{
+            maxWidth:
+              600,
+
+            margin:
+              "0 auto",
+          }}
+        >
           <div className="panel">
             <div className="panel-body">
               <h2>
@@ -165,6 +398,14 @@ export default function PresensiForm({
 
               <p>
                 {message}
+              </p>
+
+              <p
+                className="muted"
+              >
+                Scan QR terbaru
+                yang tampil di
+                layar dosen.
               </p>
             </div>
           </div>
@@ -178,7 +419,14 @@ export default function PresensiForm({
       <div
         className="shell"
         style={{
-          maxWidth: 600,
+          width:
+            "100%",
+
+          maxWidth:
+            600,
+
+          margin:
+            "0 auto",
         }}
       >
         <div className="hero">
@@ -200,14 +448,16 @@ export default function PresensiForm({
 
         <div className="panel">
           <div className="panel-body">
-
             <div
               style={{
-                marginBottom: 24,
+                marginBottom:
+                  24,
               }}
             >
               <p>
-                <strong>Kelas:</strong>{" "}
+                <strong>
+                  Kelas:
+                </strong>{" "}
                 {info.className}
               </p>
 
@@ -222,20 +472,48 @@ export default function PresensiForm({
                 <strong>
                   Jadwal:
                 </strong>{" "}
-                {info.schedule || "-"}
+                {info.schedule ||
+                  "-"}
               </p>
 
-              <p>
-                <strong>
-                  Pertemuan:
-                </strong>{" "}
-                {info.meetingNo}
-              </p>
+              {info.requireLocation && (
+                <div
+                  style={{
+                    marginTop:
+                      14,
+
+                    padding:
+                      12,
+
+                    borderRadius:
+                      8,
+
+                    background:
+                      "#f1f5f9",
+                  }}
+                >
+                  📍 Presensi ini
+                  menggunakan
+                  verifikasi lokasi.
+
+                  <br />
+
+                  Radius maksimal:{" "}
+                  <strong>
+                    {
+                      info.radiusMeters
+                    }{" "}
+                    meter
+                  </strong>
+                </div>
+              )}
             </div>
 
             {!success ? (
               <form
-                onSubmit={submit}
+                onSubmit={
+                  submit
+                }
               >
                 <div className="field">
                   <label>
@@ -244,28 +522,40 @@ export default function PresensiForm({
 
                   <input
                     className="input"
-                    value={npm}
-                    onChange={(e) =>
+                    value={
+                      npm
+                    }
+                    onChange={(
+                      e
+                    ) =>
                       setNpm(
-                        e.target.value
+                        e
+                          .target
+                          .value
                       )
                     }
                     placeholder="Masukkan NPM"
                     autoComplete="off"
+                    inputMode="numeric"
                   />
                 </div>
 
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={sending}
+                  disabled={
+                    sending
+                  }
                   style={{
-                    width: "100%",
-                    marginTop: 16,
+                    width:
+                      "100%",
+
+                    marginTop:
+                      16,
                   }}
                 >
                   {sending
-                    ? "Mengirim..."
+                    ? "Memeriksa..."
                     : "Kirim Presensi"}
                 </button>
               </form>
@@ -273,10 +563,12 @@ export default function PresensiForm({
               <div
                 className="success"
                 style={{
-                  marginTop: 16,
+                  marginTop:
+                    16,
                 }}
               >
-                ✓ Presensi berhasil.
+                ✓ Presensi
+                berhasil.
               </div>
             )}
 
@@ -288,7 +580,8 @@ export default function PresensiForm({
                     : "error"
                 }
                 style={{
-                  marginTop: 16,
+                  marginTop:
+                    16,
                 }}
               >
                 {message}
