@@ -174,13 +174,10 @@ export default function AttendanceQR({
   ] =
     useState("");
 
-  const qrTimeoutRef =
-    useRef<
-      ReturnType<typeof setTimeout>
-      | null
-    >(
-      null
-    );
+const qrTimeoutRef =
+  useRef<number | null>(
+    null
+  );
 
   /*
    * ========================================
