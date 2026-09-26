@@ -7,7 +7,7 @@ export default function PrintButton() {
       style={{
         display: "flex",
         justifyContent: "center",
-        gap: 12,
+        gap: "12px",
         margin: "20px 0",
         flexWrap: "wrap",
       }}
@@ -16,8 +16,8 @@ export default function PrintButton() {
         type="button"
         onClick={() => window.print()}
         style={{
-          border: 0,
-          borderRadius: 10,
+          border: "none",
+          borderRadius: "10px",
           padding: "12px 20px",
           background: "#123f65",
           color: "#ffffff",
@@ -33,7 +33,7 @@ export default function PrintButton() {
         onClick={() => window.history.back()}
         style={{
           border: "1px solid #cbd5e1",
-          borderRadius: 10,
+          borderRadius: "10px",
           padding: "12px 20px",
           background: "#ffffff",
           color: "#0f172a",
