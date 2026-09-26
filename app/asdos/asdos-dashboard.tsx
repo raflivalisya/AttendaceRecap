@@ -32,6 +32,26 @@ function monthLabel(value: string) {
   return new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" }).format(new Date(year, month - 1, 1));
 }
 
+function periodForMonth(value: string) {
+  const [year, month] = value.split("-").map(Number);
+  const end = new Date(Date.UTC(year, month - 1, 24));
+  const start = new Date(Date.UTC(year, month - 2, 26));
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
+}
+
+function formatPeriodDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(new Date(Date.UTC(year, month - 1, day)));
+}
+
+function periodLabel(start: string, end: string) {
+  return `${formatPeriodDate(start)} s.d. ${formatPeriodDate(end)}`;
+}
+
 export default function AsdosDashboard(props: Props) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -46,6 +66,9 @@ export default function AsdosDashboard(props: Props) {
   const [selectedMeetingId, setSelectedMeetingId] = useState("");
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, StatusValue>>({});
   const [month, setMonth] = useState(currentMonth());
+  const initialPeriod = periodForMonth(currentMonth());
+  const [periodStart, setPeriodStart] = useState(initialPeriod.start);
+  const [periodEnd, setPeriodEnd] = useState(initialPeriod.end);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -72,8 +95,10 @@ export default function AsdosDashboard(props: Props) {
     setAttendanceDraft(map);
   }, [selectedMeetingId, attendance, selectedCourseId]);
 
-  const monthLogs = useMemo(() => logs.filter((log) => log.activity_date.startsWith(month)).sort((a, b) => `${a.activity_date}${a.start_time}`.localeCompare(`${b.activity_date}${b.start_time}`)), [logs, month]);
-  const totalMinutes = monthLogs.reduce((sum, log) => {
+  const periodLogs = useMemo(() => logs
+    .filter((log) => log.activity_date >= periodStart && log.activity_date <= periodEnd)
+    .sort((a, b) => `${a.activity_date}${a.start_time}`.localeCompare(`${b.activity_date}${b.start_time}`)), [logs, periodStart, periodEnd]);
+  const totalMinutes = periodLogs.reduce((sum, log) => {
     const [sh, sm] = log.start_time.slice(0, 5).split(":").map(Number);
     const [eh, em] = log.end_time.slice(0, 5).split(":").map(Number);
     return sum + Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
@@ -295,17 +320,26 @@ export default function AsdosDashboard(props: Props) {
     setSaving(false);
   }
 
+  function changePeriodMonth(value: string) {
+    setMonth(value);
+    const next = periodForMonth(value);
+    setPeriodStart(next.start);
+    setPeriodEnd(next.end);
+  }
+
   async function generateMonth() {
+    if (!periodStart || !periodEnd) { notify("Tanggal mulai dan tanggal akhir wajib diisi."); return; }
+    if (periodStart > periodEnd) { notify("Tanggal mulai tidak boleh lebih besar dari tanggal akhir."); return; }
     setSaving(true);
     const response = await fetch("/api/asdos/generate-month", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month }),
+      body: JSON.stringify({ start_date: periodStart, end_date: periodEnd }),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) { notify(result.error ?? "Gagal membuat rekap bulanan."); setSaving(false); return; }
+    if (!response.ok) { notify(result.error ?? "Gagal membuat rekap periode."); setSaving(false); return; }
     setLogs(result.logs ?? []);
-    notify(`Rekap ${monthLabel(month)} berhasil dibuat dari jadwal.`);
+    notify(`Rekap ${periodLabel(periodStart, periodEnd)} berhasil dibuat dari jadwal.`);
     setSaving(false);
     setTab("recap");
   }
@@ -383,7 +417,7 @@ export default function AsdosDashboard(props: Props) {
           <div className="stat-grid">
             <div className="stat-card"><div className="value">{courses.length}</div><div className="label">Mata Kuliah Diasisteni</div></div>
             <div className="stat-card"><div className="value">{schedules.length}</div><div className="label">Jadwal Mingguan</div></div>
-            <div className="stat-card"><div className="value">{monthLogs.length}</div><div className="label">Kegiatan Bulan Ini</div></div>
+            <div className="stat-card"><div className="value">{periodLogs.length}</div><div className="label">Kegiatan Periode Ini</div></div>
             <div className="stat-card highlight"><div className="value">{(totalMinutes / 60).toFixed(totalMinutes % 60 ? 1 : 0)}</div><div className="label">Jam Asistensi Bulan Ini</div></div>
           </div>
 
@@ -426,7 +460,18 @@ export default function AsdosDashboard(props: Props) {
             </div>
           </div>
           <div className="panel-body">
-            <div className="inline-form" style={{ marginBottom: 16 }}><div className="field"><label>Buat Rekap Bulan</label><input className="input" type="month" value={month} onChange={(e) => setMonth(e.target.value)} /></div><button className="btn btn-primary" onClick={generateMonth} disabled={saving}>{saving ? "Membuat..." : "Generate Rekap dari Jadwal"}</button></div>
+            <div className="assessment-manager" style={{ marginBottom: 16 }}>
+              <strong>Periode Rekap Kehadiran / Gaji</strong>
+              <div className="form-grid-3" style={{ marginTop: 12 }}>
+                <div className="field"><label>Bulan Rekap</label><input className="input" type="month" value={month} onChange={(e) => changePeriodMonth(e.target.value)} /></div>
+                <div className="field"><label>Tanggal Mulai</label><input className="input" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></div>
+                <div className="field"><label>Tanggal Akhir</label><input className="input" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></div>
+              </div>
+              <div className="save-row" style={{ marginTop: 12 }}>
+                <span className="muted">Default periode: tanggal 26 bulan sebelumnya s.d. tanggal 24 bulan yang dipilih. Tanggal tetap bisa diubah manual.</span>
+                <button className="btn btn-primary" onClick={generateMonth} disabled={saving}>{saving ? "Membuat..." : "Generate Rekap dari Jadwal"}</button>
+              </div>
+            </div>
 
             {Array.from(new Set(schedules.map((item) => item.source_filename).filter((value): value is string => Boolean(value)))).length > 0 && (
               <div className="assessment-manager" style={{ marginBottom: 16 }}>
@@ -445,13 +490,28 @@ export default function AsdosDashboard(props: Props) {
         </section>}
 
         {tab === "recap" && <section className="panel">
-          <div className="panel-head"><div><h2>Rekap Kehadiran Asdos</h2><p>Lengkapi materi dan keterangan, lalu print sesuai template kampus.</p></div><div className="admin-actions"><input className="input" type="month" value={month} onChange={(e) => setMonth(e.target.value)} /><Link className="btn btn-primary" href={`/asdos/print?month=${month}`} target="_blank">🖨 Print Rekap</Link></div></div>
+          <div className="panel-head">
+            <div><h2>Rekap Kehadiran Asdos</h2><p>Hanya kegiatan pada tanggal mulai–akhir yang dipilih yang ditampilkan dan dicetak.</p></div>
+            <div className="admin-actions"><Link className="btn btn-primary" href={`/asdos/print?month=${month}&start=${periodStart}&end=${periodEnd}`} target="_blank">🖨 Print Rekap</Link></div>
+          </div>
           <div className="panel-body">
+            <div className="assessment-manager" style={{ marginBottom: 18 }}>
+              <strong>Periode Rekap Kehadiran / Gaji</strong>
+              <div className="form-grid-3" style={{ marginTop: 12 }}>
+                <div className="field"><label>Bulan Rekap</label><input className="input" type="month" value={month} onChange={(e) => changePeriodMonth(e.target.value)} /></div>
+                <div className="field"><label>Tanggal Mulai</label><input className="input" type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} /></div>
+                <div className="field"><label>Tanggal Akhir</label><input className="input" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></div>
+              </div>
+              <div className="save-row" style={{ marginTop: 12 }}>
+                <span><strong>{periodLabel(periodStart, periodEnd)}</strong></span>
+                <button className="btn btn-secondary" onClick={generateMonth} disabled={saving}>{saving ? "Membuat..." : "Generate / Refresh dari Jadwal"}</button>
+              </div>
+            </div>
             <div className="assessment-manager" style={{ marginBottom: 18 }}>
               <h3 style={{ marginTop: 0 }}>Tambah Kegiatan Manual</h3>
               <div className="form-grid-3">
                 <div className="field"><label>Mata Kuliah</label><select className="select" value={manual.course_id} onChange={(e) => setManual({ ...manual, course_id: e.target.value })}><option value="">— Pilih —</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.name} — {course.class_name}</option>)}</select></div>
-                <div className="field"><label>Tanggal</label><input className="input" type="date" value={manual.activity_date} onChange={(e) => setManual({ ...manual, activity_date: e.target.value })} /></div>
+                <div className="field"><label>Tanggal</label><input className="input" type="date" min={periodStart} max={periodEnd} value={manual.activity_date} onChange={(e) => setManual({ ...manual, activity_date: e.target.value })} /></div>
                 <div className="field"><label>Ruang</label><input className="input" value={manual.room} onChange={(e) => setManual({ ...manual, room: e.target.value })} /></div>
                 <div className="field"><label>Jam Mulai</label><input className="input" type="time" value={manual.start_time} onChange={(e) => setManual({ ...manual, start_time: e.target.value })} /></div>
                 <div className="field"><label>Jam Selesai</label><input className="input" type="time" value={manual.end_time} onChange={(e) => setManual({ ...manual, end_time: e.target.value })} /></div>
@@ -462,8 +522,8 @@ export default function AsdosDashboard(props: Props) {
               </div>
             </div>
 
-            <div style={{ marginBottom: 12 }}><strong>{monthLabel(month)}</strong> · {monthLogs.length} kegiatan · {(totalMinutes / 60).toFixed(totalMinutes % 60 ? 1 : 0)} jam</div>
-            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>Tanggal/Jam</th><th>Kelas & MK</th><th>Ruang</th><th>Materi</th><th>Kegiatan</th><th>Keterangan</th><th>Aksi</th></tr></thead><tbody>{monthLogs.map((log, index) => <tr key={log.id}><td>{index + 1}</td><td>{log.activity_date}<br/><small>{log.start_time.slice(0,5)}–{log.end_time.slice(0,5)}</small></td><td><strong>{log.course_name}</strong><br/><small>{log.class_label} · {log.lecturer_name}</small></td><td><input className="input" style={{ minWidth: 110 }} value={log.room} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, room: e.target.value } : item))} /></td><td><input className="input" style={{ minWidth: 150 }} value={log.material} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, material: e.target.value } : item))} /></td><td><select className="select" value={log.activity_type} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, activity_type: e.target.value } : item))}><option>Mengajar</option><option>Mendampingi Praktikum</option><option>Menggantikan Dosen</option><option>Asistensi</option><option>Pengawasan</option><option>Lainnya</option></select></td><td><input className="input" style={{ minWidth: 140 }} value={log.notes} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, notes: e.target.value } : item))} /></td><td><div className="admin-actions"><button className="btn btn-secondary btn-small" onClick={() => saveLog(log)}>Simpan</button><button className="btn btn-danger btn-small" onClick={() => deleteLog(log.id)}>Hapus</button></div></td></tr>)}</tbody></table>{monthLogs.length === 0 && <div className="empty-state">Belum ada rekap bulan ini. Generate dari Jadwal Asistensi atau tambah manual.</div>}</div>
+            <div style={{ marginBottom: 12 }}><strong>{monthLabel(month)}</strong> · {periodLabel(periodStart, periodEnd)} · {periodLogs.length} kegiatan · {(totalMinutes / 60).toFixed(totalMinutes % 60 ? 1 : 0)} jam</div>
+            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>Tanggal/Jam</th><th>Kelas & MK</th><th>Ruang</th><th>Materi</th><th>Kegiatan</th><th>Keterangan</th><th>Aksi</th></tr></thead><tbody>{periodLogs.map((log, index) => <tr key={log.id}><td>{index + 1}</td><td>{log.activity_date}<br/><small>{log.start_time.slice(0,5)}–{log.end_time.slice(0,5)}</small></td><td><strong>{log.course_name}</strong><br/><small>{log.class_label} · {log.lecturer_name}</small></td><td><input className="input" style={{ minWidth: 110 }} value={log.room} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, room: e.target.value } : item))} /></td><td><input className="input" style={{ minWidth: 150 }} value={log.material} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, material: e.target.value } : item))} /></td><td><select className="select" value={log.activity_type} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, activity_type: e.target.value } : item))}><option>Mengajar</option><option>Mendampingi Praktikum</option><option>Menggantikan Dosen</option><option>Asistensi</option><option>Pengawasan</option><option>Lainnya</option></select></td><td><input className="input" style={{ minWidth: 140 }} value={log.notes} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, notes: e.target.value } : item))} /></td><td><div className="admin-actions"><button className="btn btn-secondary btn-small" onClick={() => saveLog(log)}>Simpan</button><button className="btn btn-danger btn-small" onClick={() => deleteLog(log.id)}>Hapus</button></div></td></tr>)}</tbody></table>{periodLogs.length === 0 && <div className="empty-state">Belum ada kegiatan pada periode ini. Generate dari Jadwal Asistensi atau tambah manual.</div>}</div>
           </div>
         </section>}
 
