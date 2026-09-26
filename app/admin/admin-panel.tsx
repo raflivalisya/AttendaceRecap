@@ -28,6 +28,11 @@ import AttendanceLiveMonitor from "@/components/admin/AttendanceLiveMonitor";
 import AssistantAccountManager from "@/components/admin/AssistantAccountManager";
 import CourseAssistantManager from "@/components/admin/CourseAssistantManager";
 import CourseScheduleManager from "@/components/admin/CourseScheduleManager";
+import AdminProHome from "@/components/admin/pro/AdminProHome";
+import AdminGlobalSearch from "@/components/admin/pro/AdminGlobalSearch";
+import AdminNotificationCenter from "@/components/admin/pro/AdminNotificationCenter";
+import AdminToast from "@/components/admin/pro/AdminToast";
+import { useAdminConfirm } from "@/components/admin/pro/useAdminConfirm";
 
 import type { LecturerAccount } from "@/lib/auth/lecturers";
 
@@ -58,6 +63,7 @@ type Props = {
 
 
 type Tab = "attendance" | "grades" | "students" | "settings";
+type AdminView = "home" | "workspace" | "analytics" | "lecturers" | "assistants";
 
 type StatusValue = AttendanceStatus | "";
 
@@ -155,11 +161,14 @@ export default function AdminPanel(props: Props) {
 
   const [loadingLecturers, setLoadingLecturers] = useState(false);
 
-  const [showLecturerManager, setShowLecturerManager] = useState(false);
+  const [adminView, setAdminView] = useState<AdminView>("home");
 
-  const [showAssistantManager, setShowAssistantManager] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    tone: "success" | "error" | "info";
+  }>({ message: "", tone: "info" });
 
-  const [showAnalytics, setShowAnalytics] = useState(true);
+  const { confirm, modal: confirmModal } = useAdminConfirm();
 
   const [courseLecturerUserId, setCourseLecturerUserId] = useState("");
 
@@ -449,7 +458,30 @@ const canManageSelectedGrades =
 
 
 
-  function notify(text: string) { setMessage(text); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  function notify(text: string) {
+    const lower = text.toLowerCase();
+    const tone =
+      lower.includes("gagal") ||
+      lower.includes("harus") ||
+      lower.includes("tidak valid") ||
+      lower.includes("tidak memiliki akses")
+        ? "error"
+        : lower.includes("berhasil") ||
+            lower.includes("diperbarui") ||
+            lower.includes("ditambahkan") ||
+            lower.includes("disimpan")
+          ? "success"
+          : "info";
+
+    setMessage(text);
+    setToast({ message: text, tone });
+  }
+
+  function openCourseWorkspace(courseId: string, nextTab: Tab = "attendance") {
+    chooseCourse(courseId);
+    setTab(nextTab);
+    setAdminView("workspace");
+  }
 
 
 
@@ -798,7 +830,13 @@ async function refreshStudents() {
   async function deleteStudent(student: Student) {
     if (!canManageSelectedStudents) { notify("Anda tidak memiliki akses untuk menghapus mahasiswa."); return; }
 
-    if (!window.confirm(`Hapus ${student.name} beserta absensi dan nilainya?`)) return;
+    const approved = await confirm({
+      title: "Hapus mahasiswa?",
+      message: `${student.name} (${student.npm}) akan dihapus beserta data absensi dan nilainya.`,
+      confirmLabel: "Hapus Mahasiswa",
+      danger: true,
+    });
+    if (!approved) return;
 
     const { error } = await supabase.from("students").delete().eq("id", student.id); if (error) { notify(`Gagal menghapus: ${error.message}`); return; }
 
@@ -849,7 +887,13 @@ async function refreshStudents() {
   async function deleteAssessment(item: Assessment) {
     if (!canManageSelectedGrades) { notify("Anda tidak memiliki akses untuk menghapus komponen nilai."); return; }
 
-    if (!window.confirm(`Hapus komponen ${item.name} beserta semua nilainya?`)) return;
+    const approved = await confirm({
+      title: "Hapus komponen nilai?",
+      message: `Komponen ${item.name} beserta seluruh nilai mahasiswa pada komponen ini akan dihapus.`,
+      confirmLabel: "Hapus Komponen",
+      danger: true,
+    });
+    if (!approved) return;
 
     const { error } = await supabase.from("assessments").delete().eq("id", item.id); if (error) { notify(`Gagal menghapus: ${error.message}`); return; }
 
@@ -1124,7 +1168,16 @@ async function refreshStudents() {
   async function deleteCourse() {
     if (!access.canDeleteCourse) { notify("Hanya Super Admin yang dapat menghapus kelas."); return; }
 
-    if (!selectedCourse || !window.confirm(`Hapus kelas ${selectedCourse.name} — ${selectedCourse.class_name} beserta seluruh datanya?`)) return;
+    if (!selectedCourse) return;
+
+    const approved = await confirm({
+      title: "Hapus kelas?",
+      message: `${selectedCourse.name} — ${selectedCourse.class_name} beserta mahasiswa, absensi, pertemuan, dan nilai akan dihapus.`,
+      confirmLabel: "Hapus Kelas",
+      danger: true,
+    });
+
+    if (!approved) return;
 
     const { error } = await supabase.from("courses").delete().eq("id", selectedCourse.id); if (error) { notify(`Gagal menghapus kelas: ${error.message}`); return; }
 
@@ -1338,45 +1391,104 @@ async function refreshAttendance() {
 
 </div>
 
-    <div
-      style={{
-        marginTop: 16,
-        marginBottom: 18,
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 10,
-      }}
-    >
-      <button
-        type="button"
-        className={showAnalytics ? "btn btn-primary" : "btn btn-secondary"}
-        onClick={() => setShowAnalytics((value) => !value)}
-      >
-        {showAnalytics ? "Tutup Dashboard" : "📊 Dashboard Analitik"}
-      </button>
-
-      {access.isSuperAdmin && (
+    <div className="admin-pro-topbar">
+      <nav className="admin-pro-main-nav" aria-label="Navigasi Admin">
         <button
           type="button"
-          className="btn btn-secondary"
-          onClick={() => setShowLecturerManager((value) => !value)}
+          className={adminView === "home" ? "active" : ""}
+          onClick={() => setAdminView("home")}
         >
-          {showLecturerManager ? "Tutup Kelola Dosen" : "👨‍🏫 Kelola Dosen & Akun"}
+          <span>🏠</span>
+          Beranda
         </button>
-      )}
 
-      {access.isSuperAdmin && (
         <button
           type="button"
-          className="btn btn-secondary"
-          onClick={() => setShowAssistantManager((value) => !value)}
+          className={adminView === "workspace" ? "active" : ""}
+          onClick={() => setAdminView("workspace")}
         >
-          {showAssistantManager ? "Tutup Kelola Asdos" : "🧑‍💻 Kelola Asdos & Akun"}
+          <span>📚</span>
+          Kelola Kelas
         </button>
-      )}
+
+        <button
+          type="button"
+          className={adminView === "analytics" ? "active" : ""}
+          onClick={() => setAdminView("analytics")}
+        >
+          <span>📊</span>
+          Analitik
+        </button>
+
+        {access.isSuperAdmin && (
+          <button
+            type="button"
+            className={adminView === "lecturers" ? "active" : ""}
+            onClick={() => setAdminView("lecturers")}
+          >
+            <span>👨‍🏫</span>
+            Dosen
+          </button>
+        )}
+
+        {access.isSuperAdmin && (
+          <button
+            type="button"
+            className={adminView === "assistants" ? "active" : ""}
+            onClick={() => setAdminView("assistants")}
+          >
+            <span>🧑‍💻</span>
+            Asdos
+          </button>
+        )}
+      </nav>
+
+      <div className="admin-pro-topbar-actions">
+        <AdminGlobalSearch
+          courses={visibleCourses}
+          students={students}
+          onOpen={(courseId, nextTab) =>
+            openCourseWorkspace(courseId, nextTab)
+          }
+        />
+
+        <AdminNotificationCenter
+          courses={visibleCourses}
+          meetings={meetings}
+          attendance={attendance}
+          assessments={assessments}
+          onOpenCourse={(courseId, nextTab) =>
+            openCourseWorkspace(courseId, nextTab)
+          }
+        />
+      </div>
     </div>
 
-    {showAnalytics && (
+    {adminView === "home" && (
+      <AdminProHome
+        courses={visibleCourses}
+        students={students.filter((student) =>
+          visibleCourses.some((course) => course.id === student.course_id),
+        )}
+        meetings={meetings.filter((meeting) =>
+          visibleCourses.some((course) => course.id === meeting.course_id),
+        )}
+        attendance={attendance}
+        assessments={assessments}
+        grades={grades}
+        selectedCourseId={selectedCourseId}
+        canCreateCourse={access.canCreateCourse}
+        onSelectCourse={(courseId, nextTab) =>
+          openCourseWorkspace(courseId, nextTab)
+        }
+        onCreateCourse={() => {
+          setShowAddCourse(true);
+          setAdminView("workspace");
+        }}
+      />
+    )}
+
+    {adminView === "analytics" && (
       <AdminAnalyticsDashboard
         courses={visibleCourses}
         students={students}
@@ -1387,7 +1499,7 @@ async function refreshAttendance() {
       />
     )}
 
-    {access.isSuperAdmin && showLecturerManager && (
+    {access.isSuperAdmin && adminView === "lecturers" && (
       <LecturerManager
         lecturers={lecturers}
         loading={loadingLecturers}
@@ -1401,10 +1513,11 @@ async function refreshAttendance() {
       />
     )}
 
-    {access.isSuperAdmin && showAssistantManager && (
+    {access.isSuperAdmin && adminView === "assistants" && (
       <AssistantAccountManager />
     )}
 
+    {adminView === "workspace" && (
     <div className="course-admin-layout">
 
       <aside className="panel course-sidebar"><div className="panel-head"><div><h2>Daftar Kelas</h2><p>{visibleCourses.length} kelas dikelola</p></div>{access.canCreateCourse && <button className="icon-btn" onClick={() => setShowAddCourse((v) => !v)}>＋</button>}</div>
@@ -1817,6 +1930,16 @@ async function refreshAttendance() {
       </div>
 
     </div>
+
+    )}
+
+    <AdminToast
+      message={toast.message}
+      tone={toast.tone}
+      onClose={() => setToast((current) => ({ ...current, message: "" }))}
+    />
+
+    {confirmModal}
 
   </div></section>;
 
