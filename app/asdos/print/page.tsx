@@ -141,15 +141,16 @@ export default async function AsdosPrintPage({
         className="asdos-print-sheet"
       >
         <div className="top-grid">
-          <div className="brand">
-            <div className="brand-mark">
-              UTI
-            </div>
-
-            <div className="brand-name">
-              UNIVERSITAS TEKNOKRAT INDONESIA
-            </div>
-          </div>
+<div className="brand">
+  <img
+    src="/logo-teknokrat.png"
+    alt="Logo Universitas Teknokrat Indonesia"
+    className="brand-logo"
+  />
+  <div className="brand-name">
+    UNIVERSITAS TEKNOKRAT INDONESIA
+  </div>
+</div>
 
           <div className="title">
             DAFTAR KEHADIRAN
