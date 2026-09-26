@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { AssistantActivityLog } from "@/lib/asdos/types";
+import type { AssistantActivityLog } 
+from "@/lib/asdos/types";
 
 export const dynamic = "force-dynamic";
 
