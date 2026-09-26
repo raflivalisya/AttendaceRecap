@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 function isIsoDate(value: string) {
   return (
-    /^\\d{4}-\\d{2}-\\d{2}$/.test(value) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
     !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime())
   );
 }
