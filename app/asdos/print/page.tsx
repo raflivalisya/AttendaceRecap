@@ -147,9 +147,6 @@ export default async function AsdosPrintPage({
     alt="Logo Universitas Teknokrat Indonesia"
     className="brand-logo"
   />
-  <div className="brand-name">
-    UNIVERSITAS TEKNOKRAT INDONESIA
-  </div>
 </div>
 
           <div className="title">
