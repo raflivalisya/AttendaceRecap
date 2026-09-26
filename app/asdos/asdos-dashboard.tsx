@@ -58,7 +58,7 @@ export default function AsdosDashboard(props: Props) {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [courses] = useState(props.initialCourses);
   const [students, setStudents] = useState(props.initialStudents);
-  const [meetings] = useState(props.initialMeetings);
+  const [meetings, setMeetings] = useState(props.initialMeetings);
   const [attendance, setAttendance] = useState(props.initialAttendance);
   const [schedules, setSchedules] = useState(props.initialSchedules);
   const [logs, setLogs] = useState(props.initialLogs);
@@ -76,11 +76,16 @@ export default function AsdosDashboard(props: Props) {
   const [previewFilename, setPreviewFilename] = useState("");
   const [importing, setImporting] = useState(false);
   const [manual, setManual] = useState({ course_id: "", activity_date: "", start_time: "", end_time: "", room: "", material: "", activity_type: "Mengajar", notes: "" });
+  const [newNpm, setNewNpm] = useState("");
+  const [newStudentName, setNewStudentName] = useState("");
 
   const selectedCourse = courses.find((course) => course.id === selectedCourseId);
   const courseStudents = students.filter((student) => student.course_id === selectedCourseId);
   const courseMeetings = meetings.filter((meeting) => meeting.course_id === selectedCourseId).sort((a, b) => a.meeting_no - b.meeting_no);
   const selectedMeeting = courseMeetings.find((meeting) => meeting.id === selectedMeetingId);
+  const courseScheduleSlots = schedules
+    .filter((schedule) => schedule.course_id === selectedCourseId)
+    .sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time));
 
   useEffect(() => {
     const meetingId = courseMeetings[0]?.id ?? "";
@@ -113,6 +118,112 @@ export default function AsdosDashboard(props: Props) {
     await supabase.auth.signOut();
     router.push("/asdos/login");
     router.refresh();
+  }
+
+  async function addStudent() {
+    if (!selectedCourseId) {
+      notify("Pilih mata kuliah terlebih dahulu.");
+      return;
+    }
+
+    const npm = newNpm.trim();
+    const name = newStudentName.trim();
+
+    if (!npm || !name) {
+      notify("NPM dan nama mahasiswa wajib diisi.");
+      return;
+    }
+
+    if (name.length < 2) {
+      notify("Nama mahasiswa minimal 2 karakter.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    const { data, error } = await supabase.rpc("add_student_for_assistant", {
+      target_course_id: selectedCourseId,
+      target_npm: npm,
+      target_name: name,
+    });
+
+    if (error) {
+      notify(`Gagal menambah mahasiswa: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const created = Array.isArray(data) ? data[0] : data;
+
+    if (!created?.id) {
+      notify("Mahasiswa berhasil diproses, tetapi data baru tidak dapat dibaca.");
+      setSaving(false);
+      return;
+    }
+
+    setStudents((items) => [...items, created as Student].sort((a, b) => a.npm.localeCompare(b.npm)));
+    setAttendanceDraft((current) => ({ ...current, [created.id]: "" }));
+    setNewNpm("");
+    setNewStudentName("");
+    notify(`${String(created.name)} berhasil ditambahkan ke kelas.`);
+    setSaving(false);
+  }
+
+  async function syncCourseMeetings() {
+    if (!selectedCourseId) {
+      notify("Pilih mata kuliah terlebih dahulu.");
+      return;
+    }
+
+    if (!courseScheduleSlots.length) {
+      notify("Belum ada jadwal mingguan yang terhubung ke mata kuliah ini. Import jadwal Excel terlebih dahulu.");
+      return;
+    }
+
+    const slotText = courseScheduleSlots
+      .map((slot) => `${slot.day_name} ${slot.start_time.slice(0, 5)}–${slot.end_time.slice(0, 5)}`)
+      .join(", ");
+
+    const ok = window.confirm(
+      `Sinkronkan tanggal P1–P${courseMeetings.length} berdasarkan ${courseScheduleSlots.length} jadwal per minggu?\n\n${slotText}\n\nTanggal P1 yang sekarang menjadi titik awal penyusunan jadwal.`
+    );
+
+    if (!ok) return;
+
+    setSaving(true);
+    setMessage("");
+
+    const { data, error } = await supabase.rpc("sync_course_meetings_from_assistant_schedule", {
+      target_course_id: selectedCourseId,
+    });
+
+    if (error) {
+      notify(`Gagal menyinkronkan tanggal pertemuan: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const { data: refreshed, error: refreshError } = await supabase
+      .from("meetings")
+      .select("*")
+      .eq("course_id", selectedCourseId)
+      .order("meeting_no");
+
+    if (refreshError) {
+      notify(`Tanggal pertemuan berhasil disinkronkan, tetapi refresh gagal: ${refreshError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    setMeetings((items) => [
+      ...items.filter((meeting) => meeting.course_id !== selectedCourseId),
+      ...((refreshed ?? []) as Meeting[]),
+    ]);
+
+    const updatedCount = typeof data === "number" ? data : Number(data ?? courseMeetings.length);
+    notify(`${updatedCount || courseMeetings.length} tanggal pertemuan berhasil disinkronkan (${courseScheduleSlots.length} pertemuan/minggu).`);
+    setSaving(false);
   }
 
   async function renameStudent(student: Student) {
@@ -477,7 +588,50 @@ export default function AsdosDashboard(props: Props) {
               <div className="field"><label>Status</label><div className="muted">{selectedMeeting ? formatLongDate(selectedMeeting.meeting_date) : "Pilih pertemuan"}</div></div>
             </div>
 
+            {selectedCourse && (
+              <div className="assessment-manager" style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div>
+                    <strong>Jadwal Mingguan Kelas</strong>
+                    <div className="muted" style={{ marginTop: 5 }}>
+                      {courseScheduleSlots.length > 0
+                        ? courseScheduleSlots.map((slot) => `${slot.day_name} ${slot.start_time.slice(0, 5)}–${slot.end_time.slice(0, 5)}`).join(" · ")
+                        : "Belum ada jadwal import yang terhubung ke mata kuliah ini."}
+                    </div>
+                  </div>
+                  <div className="admin-actions">
+                    {courseScheduleSlots.length > 0 && <span className="badge good">{courseScheduleSlots.length} pertemuan/minggu</span>}
+                    {courseScheduleSlots.length > 0 && (
+                      <button type="button" className="btn btn-secondary" disabled={saving || courseMeetings.length === 0} onClick={() => void syncCourseMeetings()}>
+                        Sinkronkan P1–P{courseMeetings.length}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {selectedMeeting && selectedCourse && <div style={{ marginBottom: 18 }}><AttendanceQR meetingId={selectedMeeting.id} meetingNo={selectedMeeting.meeting_no} courseName={selectedCourse.name} classLabel={selectedCourse.class_name} /></div>}
+
+            {selectedCourse && (
+              <div className="assessment-manager" style={{ marginBottom: 16 }}>
+                <strong>Tambah Mahasiswa ke Kelas</strong>
+                <div className="inline-form" style={{ marginTop: 10 }}>
+                  <div className="field">
+                    <label>NPM</label>
+                    <input className="input" value={newNpm} onChange={(e) => setNewNpm(e.target.value)} placeholder="26311021" />
+                  </div>
+                  <div className="field">
+                    <label>Nama Mahasiswa</label>
+                    <input className="input" value={newStudentName} onChange={(e) => setNewStudentName(e.target.value)} placeholder="NAMA MAHASISWA" />
+                  </div>
+                  <button type="button" className="btn btn-primary" disabled={saving || !newNpm.trim() || !newStudentName.trim()} onClick={() => void addStudent()}>
+                    + Tambah Mahasiswa
+                  </button>
+                </div>
+                <div className="muted" style={{ marginTop: 8 }}>Asdos hanya dapat menambah mahasiswa ke kelas yang memang ditugaskan kepadanya.</div>
+              </div>
+            )}
 
             <div className="admin-actions" style={{ marginBottom: 12 }}>
               <button className="btn btn-success" onClick={() => { const next: Record<string, StatusValue> = {}; courseStudents.forEach((student) => next[student.id] = "H"); setAttendanceDraft(next); }}>Semua Hadir</button>
@@ -491,7 +645,7 @@ export default function AsdosDashboard(props: Props) {
 
         {tab === "schedule" && <section className="panel">
           <div className="panel-head">
-            <div><h2>Jadwal Asistensi</h2><p>Jadwal mingguan hasil import Excel. Jadwal yang salah dapat dihapus tanpa menghapus rekap yang sudah diajukan/disetujui.</p></div>
+            <div><h2>Jadwal Asistensi</h2><p>Jadwal mingguan hasil import Excel. Satu mata kuliah dapat memiliki 1, 2, atau lebih slot per minggu; setiap slot disimpan terpisah. Jadwal yang salah dapat dihapus tanpa menghapus rekap yang sudah diajukan/disetujui.</p></div>
             <div className="admin-actions">
               <button className="btn btn-secondary" onClick={() => setTab("import")}>Import Excel</button>
               {schedules.length > 0 && <button className="btn btn-danger" onClick={deleteAllSchedules} disabled={saving}>Hapus Semua Jadwal</button>}
