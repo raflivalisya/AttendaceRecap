@@ -148,6 +148,153 @@ export default function AsdosDashboard(props: Props) {
     setTab("schedule");
   }
 
+  async function deleteSchedule(schedule: AssistantScheduleTemplate) {
+    const ok = window.confirm(
+      `Hapus jadwal ${schedule.day_name} ${schedule.start_time.slice(0, 5)}–${schedule.end_time.slice(0, 5)}\n${schedule.course_name} — ${schedule.class_label}?\n\nRekap draft yang dibuat dari jadwal ini juga akan dihapus. Rekap yang sudah diajukan/disetujui tetap disimpan.`
+    );
+    if (!ok) return;
+
+    setSaving(true);
+    setMessage("");
+
+    const { error: draftError } = await supabase
+      .from("assistant_activity_logs")
+      .delete()
+      .eq("assistant_user_id", props.profile.user_id)
+      .eq("schedule_template_id", schedule.id)
+      .eq("status", "draft");
+
+    if (draftError) {
+      notify(`Gagal menghapus rekap draft terkait: ${draftError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("assistant_schedule_templates")
+      .delete()
+      .eq("id", schedule.id)
+      .eq("assistant_user_id", props.profile.user_id);
+
+    if (error) {
+      notify(`Gagal menghapus jadwal: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    setSchedules((items) => items.filter((item) => item.id !== schedule.id));
+    setLogs((items) =>
+      items.filter(
+        (item) =>
+          item.schedule_template_id !== schedule.id || item.status !== "draft",
+      ),
+    );
+    notify("Jadwal asistensi berhasil dihapus.");
+    setSaving(false);
+  }
+
+  async function deleteImportedFile(filename: string) {
+    const related = schedules.filter((item) => item.source_filename === filename);
+    if (!related.length) return;
+
+    const ok = window.confirm(
+      `Hapus semua ${related.length} jadwal hasil import dari file \"${filename}\"?\n\nRekap draft yang berasal dari jadwal tersebut juga akan dihapus. Rekap yang sudah diajukan/disetujui tetap disimpan.`
+    );
+    if (!ok) return;
+
+    setSaving(true);
+    setMessage("");
+    const ids = related.map((item) => item.id);
+
+    const { error: draftError } = await supabase
+      .from("assistant_activity_logs")
+      .delete()
+      .eq("assistant_user_id", props.profile.user_id)
+      .in("schedule_template_id", ids)
+      .eq("status", "draft");
+
+    if (draftError) {
+      notify(`Gagal menghapus rekap draft terkait: ${draftError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("assistant_schedule_templates")
+      .delete()
+      .eq("assistant_user_id", props.profile.user_id)
+      .eq("source_filename", filename);
+
+    if (error) {
+      notify(`Gagal menghapus hasil import: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const idSet = new Set(ids);
+    setSchedules((items) => items.filter((item) => !idSet.has(item.id)));
+    setLogs((items) =>
+      items.filter(
+        (item) =>
+          !item.schedule_template_id ||
+          !idSet.has(item.schedule_template_id) ||
+          item.status !== "draft",
+      ),
+    );
+    notify(`Semua jadwal dari file ${filename} berhasil dihapus.`);
+    setSaving(false);
+  }
+
+  async function deleteAllSchedules() {
+    if (!schedules.length) return;
+
+    const ok = window.confirm(
+      `Hapus SEMUA ${schedules.length} jadwal asistensi milik kamu?\n\nGunakan ini hanya jika import benar-benar salah. Rekap draft terkait ikut dihapus; rekap yang sudah diajukan/disetujui tetap disimpan.`
+    );
+    if (!ok) return;
+
+    setSaving(true);
+    setMessage("");
+    const ids = schedules.map((item) => item.id);
+
+    const { error: draftError } = await supabase
+      .from("assistant_activity_logs")
+      .delete()
+      .eq("assistant_user_id", props.profile.user_id)
+      .in("schedule_template_id", ids)
+      .eq("status", "draft");
+
+    if (draftError) {
+      notify(`Gagal menghapus rekap draft terkait: ${draftError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("assistant_schedule_templates")
+      .delete()
+      .eq("assistant_user_id", props.profile.user_id);
+
+    if (error) {
+      notify(`Gagal menghapus semua jadwal: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const idSet = new Set(ids);
+    setSchedules([]);
+    setLogs((items) =>
+      items.filter(
+        (item) =>
+          !item.schedule_template_id ||
+          !idSet.has(item.schedule_template_id) ||
+          item.status !== "draft",
+      ),
+    );
+    notify("Semua jadwal asistensi berhasil dihapus.");
+    setSaving(false);
+  }
+
   async function generateMonth() {
     setSaving(true);
     const response = await fetch("/api/asdos/generate-month", {
@@ -271,10 +418,29 @@ export default function AsdosDashboard(props: Props) {
         </section>}
 
         {tab === "schedule" && <section className="panel">
-          <div className="panel-head"><div><h2>Jadwal Asistensi</h2><p>Jadwal mingguan hasil import Excel.</p></div><button className="btn btn-secondary" onClick={() => setTab("import")}>Import Excel</button></div>
+          <div className="panel-head">
+            <div><h2>Jadwal Asistensi</h2><p>Jadwal mingguan hasil import Excel. Jadwal yang salah dapat dihapus tanpa menghapus rekap yang sudah diajukan/disetujui.</p></div>
+            <div className="admin-actions">
+              <button className="btn btn-secondary" onClick={() => setTab("import")}>Import Excel</button>
+              {schedules.length > 0 && <button className="btn btn-danger" onClick={deleteAllSchedules} disabled={saving}>Hapus Semua Jadwal</button>}
+            </div>
+          </div>
           <div className="panel-body">
             <div className="inline-form" style={{ marginBottom: 16 }}><div className="field"><label>Buat Rekap Bulan</label><input className="input" type="month" value={month} onChange={(e) => setMonth(e.target.value)} /></div><button className="btn btn-primary" onClick={generateMonth} disabled={saving}>{saving ? "Membuat..." : "Generate Rekap dari Jadwal"}</button></div>
-            <div className="table-wrap"><table className="admin-table"><thead><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Mata Kuliah</th><th>Dosen</th><th>Ruang</th><th>Link DB</th></tr></thead><tbody>{schedules.map((schedule) => <tr key={schedule.id}><td>{schedule.day_name}</td><td>{schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</td><td>{schedule.class_label}</td><td><strong>{schedule.course_name}</strong></td><td>{schedule.lecturer_name}</td><td>{schedule.room || "—"}</td><td><span className={`badge ${schedule.course_id ? "good" : "warn"}`}>{schedule.course_id ? "Terhubung" : "Belum cocok"}</span></td></tr>)}</tbody></table>{schedules.length === 0 && <div className="empty-state">Belum ada jadwal. Gunakan Import Excel.</div>}</div>
+
+            {Array.from(new Set(schedules.map((item) => item.source_filename).filter((value): value is string => Boolean(value)))).length > 0 && (
+              <div className="assessment-manager" style={{ marginBottom: 16 }}>
+                <strong>Hasil Import Excel</strong>
+                <div className="admin-actions" style={{ marginTop: 10, flexWrap: "wrap" }}>
+                  {Array.from(new Set(schedules.map((item) => item.source_filename).filter((value): value is string => Boolean(value)))).map((filename) => {
+                    const count = schedules.filter((item) => item.source_filename === filename).length;
+                    return <button key={filename} className="btn btn-danger btn-small" onClick={() => deleteImportedFile(filename)} disabled={saving}>Hapus Import: {filename} ({count})</button>;
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="table-wrap"><table className="admin-table"><thead><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Mata Kuliah</th><th>Dosen</th><th>Ruang</th><th>Sumber</th><th>Link DB</th><th>Aksi</th></tr></thead><tbody>{schedules.map((schedule) => <tr key={schedule.id}><td>{schedule.day_name}</td><td>{schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</td><td>{schedule.class_label}</td><td><strong>{schedule.course_name}</strong></td><td>{schedule.lecturer_name}</td><td>{schedule.room || "—"}</td><td>{schedule.source_filename || "Manual"}</td><td><span className={`badge ${schedule.course_id ? "good" : "warn"}`}>{schedule.course_id ? "Terhubung" : "Belum cocok"}</span></td><td><button className="btn btn-danger btn-small" onClick={() => deleteSchedule(schedule)} disabled={saving}>Hapus</button></td></tr>)}</tbody></table>{schedules.length === 0 && <div className="empty-state">Belum ada jadwal. Gunakan Import Excel.</div>}</div>
           </div>
         </section>}
 
