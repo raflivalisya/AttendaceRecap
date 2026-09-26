@@ -679,3 +679,163 @@ svg {
     font-size: 13px !important;
   }
 }
+
+/* =========================================================
+   LOGIN ADMIN / DOSEN / ASDOS
+   ========================================================= */
+
+.main-login-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.main-login-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  text-decoration: none;
+}
+
+.asdos-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  cursor: pointer;
+}
+
+.asdos-login-icon {
+  font-size: 16px;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 640px) {
+
+  .main-login-actions {
+    width: 100%;
+
+    display: grid;
+    grid-template-columns: 1fr;
+
+    gap: 10px;
+  }
+
+  .main-login-actions .btn,
+  .asdos-login-button {
+    width: 100%;
+    min-height: 46px;
+
+    justify-content: center;
+
+    text-align: center;
+  }
+
+}
+
+/* =========================================================
+   PRINT REKAP ASISTEN DOSEN
+   ========================================================= */
+
+@media print {
+
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: 100% !important;
+    height: auto !important;
+
+    min-height: 0 !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
+    background: #ffffff !important;
+  }
+
+  body {
+    display: block !important;
+  }
+
+  /* Tombol tidak ikut dicetak */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Hilangkan layout website normal */
+  .asdos-print-page {
+    display: block !important;
+
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
+    position: static !important;
+  }
+
+  /* Dokumen A4 */
+  .asdos-print-sheet {
+    display: block !important;
+
+    width: 100% !important;
+    max-width: none !important;
+
+    height: auto !important;
+    min-height: 0 !important;
+
+    margin: 0 !important;
+    padding: 0 !important;
+
+    position: static !important;
+
+    background: #ffffff !important;
+
+    box-shadow: none !important;
+    border: none !important;
+
+    break-before: auto !important;
+    page-break-before: auto !important;
+
+    transform: none !important;
+  }
+
+  /* Hindari halaman kosong sebelum tabel */
+  .asdos-print-sheet,
+  .asdos-print-sheet table {
+    break-before: avoid !important;
+    page-break-before: avoid !important;
+  }
+
+  /* Jangan pecah satu baris tabel */
+  .asdos-print-sheet tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Warna header tabel tetap tercetak */
+  .asdos-print-sheet th {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .asdos-print-sheet table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+}
