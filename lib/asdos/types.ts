@@ -67,3 +67,18 @@ export type ParsedAssistantSchedule = {
   match_status: "matched" | "unmatched";
   source_sheet: string;
 };
+
+
+export type CourseScheduleSlot = {
+  id: string;
+  course_id: string;
+  weekday: number;
+  day_name: string;
+  start_time: string;
+  end_time: string;
+  room: string;
+  source_filename: string | null;
+  source_assistant_user_id: string | null;
+  created_at?: string;
+  updated_at?: string;
+};

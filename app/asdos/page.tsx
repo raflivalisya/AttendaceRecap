@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Attendance, Course, Meeting, Student } from "@/lib/types";
-import type { AssistantActivityLog, AssistantProfile, AssistantScheduleTemplate } from "@/lib/asdos/types";
+import type { AssistantActivityLog, AssistantProfile, AssistantScheduleTemplate, CourseScheduleSlot } from "@/lib/asdos/types";
 import AsdosDashboard from "./asdos-dashboard";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +24,13 @@ export default async function AsdosPage() {
   const { data: memberships } = await supabase.from("course_members").select("course_id").eq("user_id", user.id).eq("role", "assistant");
   const courseIds = (memberships ?? []).map((row) => row.course_id);
 
-  const [coursesRes, studentsRes, meetingsRes, attendanceRes, schedulesRes, logsRes] = await Promise.all([
+  const [coursesRes, studentsRes, meetingsRes, attendanceRes, schedulesRes, sharedSchedulesRes, logsRes] = await Promise.all([
     courseIds.length ? supabase.from("courses").select("*").in("id", courseIds).order("name") : Promise.resolve({ data: [] }),
     courseIds.length ? supabase.from("students").select("*").in("course_id", courseIds).order("npm") : Promise.resolve({ data: [] }),
     courseIds.length ? supabase.from("meetings").select("*").in("course_id", courseIds).order("meeting_no") : Promise.resolve({ data: [] }),
     supabase.from("attendance").select("*"),
     supabase.from("assistant_schedule_templates").select("*").eq("assistant_user_id", user.id).order("weekday").order("start_time"),
+    courseIds.length ? supabase.from("course_schedules").select("*").in("course_id", courseIds).order("weekday").order("start_time") : Promise.resolve({ data: [] }),
     supabase.from("assistant_activity_logs").select("*").eq("assistant_user_id", user.id).order("activity_date", { ascending: false }).order("start_time"),
   ]);
 
@@ -41,6 +42,7 @@ export default async function AsdosPage() {
       initialMeetings={(meetingsRes.data ?? []) as Meeting[]}
       initialAttendance={(attendanceRes.data ?? []) as Attendance[]}
       initialSchedules={(schedulesRes.data ?? []) as AssistantScheduleTemplate[]}
+      initialCourseSchedules={(sharedSchedulesRes.data ?? []) as CourseScheduleSlot[]}
       initialLogs={(logsRes.data ?? []) as AssistantActivityLog[]}
     />
   );

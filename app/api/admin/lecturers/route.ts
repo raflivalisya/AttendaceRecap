@@ -205,8 +205,10 @@ export async function PATCH(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
+
     const userId = String(body.user_id ?? "").trim();
     const displayName = String(body.display_name ?? "").trim();
+    const newPassword = String(body.new_password ?? "");
 
     if (!userId) {
       return NextResponse.json(
@@ -222,11 +224,18 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    if (newPassword && newPassword.length < 8) {
+      return NextResponse.json(
+        { success: false, message: "Password baru minimal 8 karakter." },
+        { status: 400 },
+      );
+    }
+
     const admin = createAdminClient();
 
     const { data: profile, error: profileLookupError } = await admin
       .from("admin_profiles")
-      .select("user_id, role")
+      .select("user_id, role, display_name")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -239,20 +248,49 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    if (newPassword) {
+      const { error: passwordError } =
+        await admin.auth.admin.updateUserById(userId, {
+          password: newPassword,
+          user_metadata: {
+            full_name: displayName,
+          },
+        });
+
+      if (passwordError) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Gagal reset password dosen: ${passwordError.message}`,
+          },
+          { status: passwordError.status ?? 400 },
+        );
+      }
+    } else {
+      const { error: metadataError } =
+        await admin.auth.admin.updateUserById(userId, {
+          user_metadata: {
+            full_name: displayName,
+          },
+        });
+
+      if (metadataError) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Gagal memperbarui akun Auth dosen: ${metadataError.message}`,
+          },
+          { status: metadataError.status ?? 400 },
+        );
+      }
+    }
+
     const { error: profileError } = await admin
       .from("admin_profiles")
       .update({ display_name: displayName })
       .eq("user_id", userId);
 
     if (profileError) throw profileError;
-
-    const { error: authError } = await admin.auth.admin.updateUserById(userId, {
-      user_metadata: {
-        full_name: displayName,
-      },
-    });
-
-    if (authError) throw authError;
 
     const { data: memberships, error: membershipError } = await admin
       .from("course_members")
@@ -262,9 +300,9 @@ export async function PATCH(request: NextRequest) {
 
     if (membershipError) throw membershipError;
 
-    const courseIds = (memberships ?? []).map((item) => item.course_id);
+    const courseIds = (memberships ?? []).map((row) => row.course_id);
 
-    if (courseIds.length > 0) {
+    if (courseIds.length) {
       const { error: courseError } = await admin
         .from("courses")
         .update({ lecturer: displayName })
@@ -275,12 +313,9 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Nama dosen berhasil diperbarui.",
-      lecturer: {
-        user_id: userId,
-        display_name: displayName,
-      },
-      updated_course_ids: courseIds,
+      message: newPassword
+        ? "Nama dan password dosen berhasil diperbarui."
+        : "Nama dosen berhasil diperbarui.",
     });
   } catch (error: any) {
     console.error("UPDATE LECTURER ERROR:", error);
@@ -288,7 +323,9 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        message: error?.message || "Gagal memperbarui nama dosen.",
+        message:
+          error?.message ||
+          "Terjadi kesalahan saat memperbarui akun dosen.",
       },
       { status: 500 },
     );

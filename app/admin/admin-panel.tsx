@@ -27,6 +27,7 @@ import AdminAnalyticsDashboard from "@/components/admin/AdminAnalyticsDashboard"
 import AttendanceLiveMonitor from "@/components/admin/AttendanceLiveMonitor";
 import AssistantAccountManager from "@/components/admin/AssistantAccountManager";
 import CourseAssistantManager from "@/components/admin/CourseAssistantManager";
+import CourseScheduleManager from "@/components/admin/CourseScheduleManager";
 
 import type { LecturerAccount } from "@/lib/auth/lecturers";
 
@@ -1795,12 +1796,18 @@ async function refreshAttendance() {
               <div className="field"><label>Mata Kuliah</label><input className="input" value={String(courseDraft.name ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, name: e.target.value })}/></div>
               <div className="field"><label>Kelas</label><input className="input" value={String(courseDraft.class_name ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, class_name: e.target.value })}/></div>
               <div className="field"><label>Dosen Pengampu</label>{access.isSuperAdmin ? <select className="select" value={courseLecturerUserId} onChange={(e) => setCourseLecturerUserId(e.target.value)}><option value="">— Pilih Dosen —</option>{lecturers.filter((lecturer) => lecturer.role === "lecturer").map((lecturer) => <option key={lecturer.user_id} value={lecturer.user_id}>{lecturer.display_name}{lecturer.email ? ` — ${lecturer.email}` : ""}</option>)}</select> : <input className="input" value={String(courseDraft.lecturer ?? "")} disabled />}</div>
-              <div className="field"><label>Jadwal</label><input className="input" value={String(courseDraft.schedule ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, schedule: e.target.value })}/></div>
+              <div className="field"><label>Ringkasan Jadwal</label><input className="input" value={String(courseDraft.schedule ?? "") || "Belum ada jadwal"} disabled /></div>
               <div className="field"><label>Semester</label><input className="input" value={String(courseDraft.semester ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, semester: e.target.value })}/></div>
               <div className="field"><label>Tahun Akademik</label><input className="input" value={String(courseDraft.academic_year ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, academic_year: e.target.value })}/></div>
               <div className="field"><label>Batas Kehadiran (%)</label><input className="input" type="number" min="0" max="100" value={Number(courseDraft.min_attendance_pct ?? 80)} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, min_attendance_pct: Number(e.target.value) })}/></div>
               <div className="field checkbox-field"><label><input type="checkbox" checked={Boolean(courseDraft.publish_grades)} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, publish_grades: e.target.checked })}/> Publikasikan nilai di halaman Rekap</label><small>Jika mati, nilai hanya dapat dilihat admin.</small></div>
               <div className="form-actions-full">{canEditSelectedCourse && <button className="btn btn-primary" onClick={saveCourseSettings} disabled={saving}>{saving ? "Menyimpan..." : "Simpan Pengaturan"}</button>}{access.canDeleteCourse && <button className="btn btn-danger" onClick={deleteCourse}>Hapus Kelas</button>}</div>
+              {canEditSelectedCourse && selectedCourse && (
+                <CourseScheduleManager
+                  courseId={selectedCourse.id}
+                  meetingCount={selectedCourse.meeting_count}
+                />
+              )}
               {canEditSelectedCourse && selectedCourse && <CourseAssistantManager courseId={selectedCourse.id} />}
             </div>
           </section>}

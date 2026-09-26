@@ -6,7 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { STATUS_LABELS, formatLongDate } from "@/lib/attendance";
 import type { Attendance, AttendanceStatus, Course, Meeting, Student } from "@/lib/types";
-import type { AssistantActivityLog, AssistantProfile, AssistantScheduleTemplate, ParsedAssistantSchedule } from "@/lib/asdos/types";
+import type { AssistantActivityLog, AssistantProfile, AssistantScheduleTemplate, ParsedAssistantSchedule, CourseScheduleSlot } from "@/lib/asdos/types";
 import AttendanceQR from "@/components/admin/AttendanceQR";
 
 type Tab = "dashboard" | "attendance" | "schedule" | "recap" | "import";
@@ -19,6 +19,7 @@ type Props = {
   initialMeetings: Meeting[];
   initialAttendance: Attendance[];
   initialSchedules: AssistantScheduleTemplate[];
+  initialCourseSchedules: CourseScheduleSlot[];
   initialLogs: AssistantActivityLog[];
 };
 
@@ -61,6 +62,7 @@ export default function AsdosDashboard(props: Props) {
   const [meetings, setMeetings] = useState(props.initialMeetings);
   const [attendance, setAttendance] = useState(props.initialAttendance);
   const [schedules, setSchedules] = useState(props.initialSchedules);
+  const [courseSchedules, setCourseSchedules] = useState(props.initialCourseSchedules);
   const [logs, setLogs] = useState(props.initialLogs);
   const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id ?? "");
   const [selectedMeetingId, setSelectedMeetingId] = useState("");
@@ -83,7 +85,7 @@ export default function AsdosDashboard(props: Props) {
   const courseStudents = students.filter((student) => student.course_id === selectedCourseId);
   const courseMeetings = meetings.filter((meeting) => meeting.course_id === selectedCourseId).sort((a, b) => a.meeting_no - b.meeting_no);
   const selectedMeeting = courseMeetings.find((meeting) => meeting.id === selectedMeetingId);
-  const courseScheduleSlots = schedules
+  const courseScheduleSlots = courseSchedules
     .filter((schedule) => schedule.course_id === selectedCourseId)
     .sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time));
 
@@ -194,7 +196,7 @@ export default function AsdosDashboard(props: Props) {
     setSaving(true);
     setMessage("");
 
-    const { data, error } = await supabase.rpc("sync_course_meetings_from_assistant_schedule", {
+    const { data, error } = await supabase.rpc("sync_course_meetings_from_shared_schedule", {
       target_course_id: selectedCourseId,
     });
 
@@ -314,8 +316,14 @@ export default function AsdosDashboard(props: Props) {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) { notify(result.error ?? "Gagal menyimpan jadwal."); setImporting(false); return; }
-    const { data } = await supabase.from("assistant_schedule_templates").select("*").eq("assistant_user_id", props.profile.user_id).order("weekday").order("start_time");
+    const [{ data }, { data: sharedData }] = await Promise.all([
+      supabase.from("assistant_schedule_templates").select("*").eq("assistant_user_id", props.profile.user_id).order("weekday").order("start_time"),
+      courses.length
+        ? supabase.from("course_schedules").select("*").in("course_id", courses.map((course) => course.id)).order("weekday").order("start_time")
+        : Promise.resolve({ data: [] }),
+    ]);
     setSchedules((data ?? []) as AssistantScheduleTemplate[]);
+    setCourseSchedules((sharedData ?? []) as CourseScheduleSlot[]);
     setPreview([]);
     notify(`${result.imported_count ?? 0} jadwal berhasil disimpan.`);
     setImporting(false);
@@ -354,6 +362,30 @@ export default function AsdosDashboard(props: Props) {
       notify(`Gagal menghapus jadwal: ${error.message}`);
       setSaving(false);
       return;
+    }
+
+    if (schedule.course_id) {
+      await supabase
+        .from("course_schedules")
+        .delete()
+        .eq("course_id", schedule.course_id)
+        .eq("weekday", schedule.weekday)
+        .eq("start_time", schedule.start_time)
+        .eq("end_time", schedule.end_time)
+        .eq("source_assistant_user_id", props.profile.user_id);
+
+      setCourseSchedules((items) =>
+        items.filter(
+          (item) =>
+            !(
+              item.course_id === schedule.course_id &&
+              item.weekday === schedule.weekday &&
+              item.start_time.slice(0, 5) === schedule.start_time.slice(0, 5) &&
+              item.end_time.slice(0, 5) === schedule.end_time.slice(0, 5) &&
+              item.source_assistant_user_id === props.profile.user_id
+            ),
+        ),
+      );
     }
 
     setSchedules((items) => items.filter((item) => item.id !== schedule.id));
@@ -397,6 +429,12 @@ export default function AsdosDashboard(props: Props) {
       .from("assistant_schedule_templates")
       .delete()
       .eq("assistant_user_id", props.profile.user_id)
+      .eq("source_filename", filename);
+
+    await supabase
+      .from("course_schedules")
+      .delete()
+      .eq("source_assistant_user_id", props.profile.user_id)
       .eq("source_filename", filename);
 
     if (error) {
@@ -454,6 +492,15 @@ export default function AsdosDashboard(props: Props) {
       setSaving(false);
       return;
     }
+
+    await supabase
+      .from("course_schedules")
+      .delete()
+      .eq("source_assistant_user_id", props.profile.user_id);
+
+    setCourseSchedules((items) =>
+      items.filter((item) => item.source_assistant_user_id !== props.profile.user_id),
+    );
 
     const idSet = new Set(ids);
     setSchedules([]);
@@ -582,6 +629,32 @@ export default function AsdosDashboard(props: Props) {
         {tab === "attendance" && <section className="panel">
           <div className="panel-head"><div><h2>Kelola Absensi Mahasiswa</h2><p>Asdos hanya dapat mengelola kelas yang ditugaskan.</p></div></div>
           <div className="panel-body">
+            <div style={{ marginBottom: 18 }}>
+              <strong>Jadwal Mata Kuliah (Sinkron dengan Dosen/Admin)</strong>
+              <div className="table-wrap" style={{ marginTop: 10 }}>
+                <table className="admin-table">
+                  <thead>
+                    <tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Mata Kuliah</th><th>Ruang</th><th>Sumber</th></tr>
+                  </thead>
+                  <tbody>
+                    {courseSchedules.map((schedule) => {
+                      const course = courses.find((item) => item.id === schedule.course_id);
+                      return (
+                        <tr key={schedule.id}>
+                          <td>{schedule.day_name}</td>
+                          <td>{schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</td>
+                          <td>{course?.class_name ?? "—"}</td>
+                          <td><strong>{course?.name ?? "—"}</strong></td>
+                          <td>{schedule.room || "—"}</td>
+                          <td>{schedule.source_filename ? `Import: ${schedule.source_filename}` : "Dosen/Admin"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {courseSchedules.length === 0 && <div className="empty-state">Belum ada jadwal mata kuliah bersama.</div>}
+              </div>
+            </div>
             <div className="form-grid-3" style={{ marginBottom: 16 }}>
               <div className="field"><label>Mata Kuliah</label><select className="select" value={selectedCourseId} onChange={(e) => setSelectedCourseId(e.target.value)}><option value="">— Pilih Mata Kuliah —</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.name} — {course.class_name}</option>)}</select></div>
               <div className="field"><label>Pertemuan</label><select className="select" value={selectedMeetingId} onChange={(e) => setSelectedMeetingId(e.target.value)}><option value="">— Pilih Pertemuan —</option>{courseMeetings.map((meeting) => <option key={meeting.id} value={meeting.id}>P{meeting.meeting_no} — {meeting.meeting_date}</option>)}</select></div>
@@ -645,7 +718,7 @@ export default function AsdosDashboard(props: Props) {
 
         {tab === "schedule" && <section className="panel">
           <div className="panel-head">
-            <div><h2>Jadwal Asistensi</h2><p>Jadwal mingguan hasil import Excel. Satu mata kuliah dapat memiliki 1, 2, atau lebih slot per minggu; setiap slot disimpan terpisah. Jadwal yang salah dapat dihapus tanpa menghapus rekap yang sudah diajukan/disetujui.</p></div>
+            <div><h2>Jadwal Asistensi</h2><p>Jadwal utama di bawah ini sama dengan jadwal yang diatur Dosen/Admin. Import Excel yang cocok dengan kelas akan ikut memperbarui sumber jadwal yang sama.</p></div>
             <div className="admin-actions">
               <button className="btn btn-secondary" onClick={() => setTab("import")}>Import Excel</button>
               {schedules.length > 0 && <button className="btn btn-danger" onClick={deleteAllSchedules} disabled={saving}>Hapus Semua Jadwal</button>}
