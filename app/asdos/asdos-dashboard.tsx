@@ -57,7 +57,7 @@ export default function AsdosDashboard(props: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<Tab>("dashboard");
   const [courses] = useState(props.initialCourses);
-  const [students] = useState(props.initialStudents);
+  const [students, setStudents] = useState(props.initialStudents);
   const [meetings] = useState(props.initialMeetings);
   const [attendance, setAttendance] = useState(props.initialAttendance);
   const [schedules, setSchedules] = useState(props.initialSchedules);
@@ -113,6 +113,44 @@ export default function AsdosDashboard(props: Props) {
     await supabase.auth.signOut();
     router.push("/asdos/login");
     router.refresh();
+  }
+
+  async function renameStudent(student: Student) {
+    const nextName = window.prompt("Nama mahasiswa:", student.name)?.trim();
+
+    if (!nextName || nextName === student.name) return;
+
+    if (nextName.length < 2) {
+      notify("Nama mahasiswa minimal 2 karakter.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    const { error } = await supabase.rpc("rename_student_for_assistant", {
+      target_student_id: student.id,
+      new_name: nextName,
+    });
+
+    if (error) {
+      notify(`Gagal mengubah nama mahasiswa: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    const normalizedName = nextName.toUpperCase();
+
+    setStudents((items) =>
+      items.map((item) =>
+        item.id === student.id
+          ? { ...item, name: normalizedName }
+          : item,
+      ),
+    );
+
+    notify(`Nama mahasiswa berhasil diubah menjadi ${normalizedName}.`);
+    setSaving(false);
   }
 
   async function saveAttendance() {
@@ -447,7 +485,7 @@ export default function AsdosDashboard(props: Props) {
               <button className="btn btn-primary" disabled={saving || !selectedMeetingId} onClick={saveAttendance}>{saving ? "Menyimpan..." : "Simpan Absensi"}</button>
             </div>
 
-            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} onChange={(e) => setAttendanceDraft((current) => ({ ...current, [student.id]: e.target.value as StatusValue }))}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((status) => <option key={status} value={status}>{status} — {STATUS_LABELS[status]}</option>)}</select></td></tr>)}</tbody></table></div>
+            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th><th>Aksi</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><button type="button" className="btn btn-secondary btn-small" disabled={saving} onClick={() => void renameStudent(student)}>Ubah Nama</button></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} onChange={(e) => setAttendanceDraft((current) => ({ ...current, [student.id]: e.target.value as StatusValue }))}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((status) => <option key={status} value={status}>{status} — {STATUS_LABELS[status]}</option>)}</select></td></tr>)}</tbody></table></div>
           </div>
         </section>}
 

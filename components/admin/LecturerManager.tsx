@@ -9,6 +9,18 @@ type Props = {
   onCreated: (lecturer: LecturerAccount) => void;
 };
 
+async function readJson(response: Response) {
+  const raw = await response.text();
+
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(
+      `Server tidak mengembalikan JSON (HTTP ${response.status}).`,
+    );
+  }
+}
+
 export default function LecturerManager({
   lecturers,
   loading,
@@ -44,7 +56,7 @@ export default function LecturerManager({
         }),
       });
 
-      const result = await response.json();
+      const result = await readJson(response);
 
       if (!response.ok) {
         throw new Error(result.message || "Gagal membuat akun dosen.");
@@ -54,11 +66,62 @@ export default function LecturerManager({
       setDisplayName("");
       setEmail("");
       setPassword("");
-      setMessage("Akun dosen berhasil dibuat dan langsung bisa dipilih saat membuat mata kuliah.");
+      setMessage(
+        "Akun dosen berhasil dibuat dan langsung bisa dipilih saat membuat mata kuliah.",
+      );
     } catch (error: any) {
       setIsError(true);
       setMessage(error?.message || "Gagal membuat akun dosen.");
     } finally {
+      setSaving(false);
+    }
+  }
+
+  async function editLecturerName(lecturer: LecturerAccount) {
+    const nextName = window.prompt(
+      "Nama dosen:",
+      lecturer.display_name,
+    )?.trim();
+
+    if (!nextName || nextName === lecturer.display_name) return;
+
+    if (nextName.length < 3) {
+      setIsError(true);
+      setMessage("Nama dosen minimal 3 karakter.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+    setIsError(false);
+
+    try {
+      const response = await fetch("/api/admin/lecturers", {
+        method: "PATCH",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          user_id: lecturer.user_id,
+          display_name: nextName,
+        }),
+      });
+
+      const result = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Gagal mengubah nama dosen.");
+      }
+
+      // Reload agar nama baru langsung ikut terbarui di dropdown dosen,
+      // sidebar kelas, dan courses.lecturer yang sudah diperbarui server.
+      window.location.reload();
+    } catch (error: any) {
+      setIsError(true);
+      setMessage(error?.message || "Gagal mengubah nama dosen.");
       setSaving(false);
     }
   }
@@ -68,7 +131,7 @@ export default function LecturerManager({
       <div className="panel-head">
         <div>
           <h2>Kelola Dosen</h2>
-          <p>Buat akun login dosen langsung dari Super Admin.</p>
+          <p>Buat akun login dan edit nama dosen dari Super Admin.</p>
         </div>
         <span className="badge neutral">{lecturers.length} dosen</span>
       </div>
@@ -122,13 +185,16 @@ export default function LecturerManager({
               }
               onClick={() => void createLecturer()}
             >
-              {saving ? "Membuat Akun..." : "+ Buat Akun Dosen"}
+              {saving ? "Memproses..." : "+ Buat Akun Dosen"}
             </button>
           </div>
         </div>
 
         {message && (
-          <div className={isError ? "error" : "success"} style={{ marginBottom: 16 }}>
+          <div
+            className={isError ? "error" : "success"}
+            style={{ marginBottom: 16 }}
+          >
             {message}
           </div>
         )}
@@ -146,19 +212,32 @@ export default function LecturerManager({
                   <th>Nama Dosen</th>
                   <th>Email</th>
                   <th>Mata Kuliah</th>
+                  <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {lecturers.map((lecturer, index) => (
-                  <tr key={lecturer.user_id}>
-                    <td>{index + 1}</td>
-                    <td>
-                      <strong>{lecturer.display_name}</strong>
-                    </td>
-                    <td>{lecturer.email || "-"}</td>
-                    <td>{lecturer.course_count}</td>
-                  </tr>
-                ))}
+                {lecturers
+                  .filter((lecturer) => lecturer.role === "lecturer")
+                  .map((lecturer, index) => (
+                    <tr key={lecturer.user_id}>
+                      <td>{index + 1}</td>
+                      <td>
+                        <strong>{lecturer.display_name}</strong>
+                      </td>
+                      <td>{lecturer.email || "-"}</td>
+                      <td>{lecturer.course_count}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-small"
+                          disabled={saving}
+                          onClick={() => void editLecturerName(lecturer)}
+                        >
+                          Edit Nama
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

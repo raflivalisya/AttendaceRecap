@@ -198,3 +198,99 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const auth = await requireSuperAdmin();
+    if (!auth.ok) return auth.response;
+
+    const body = await request.json();
+    const userId = String(body.user_id ?? "").trim();
+    const displayName = String(body.display_name ?? "").trim();
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, message: "User dosen tidak valid." },
+        { status: 400 },
+      );
+    }
+
+    if (displayName.length < 3) {
+      return NextResponse.json(
+        { success: false, message: "Nama dosen minimal 3 karakter." },
+        { status: 400 },
+      );
+    }
+
+    const admin = createAdminClient();
+
+    const { data: profile, error: profileLookupError } = await admin
+      .from("admin_profiles")
+      .select("user_id, role")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (profileLookupError) throw profileLookupError;
+
+    if (!profile || profile.role !== "lecturer") {
+      return NextResponse.json(
+        { success: false, message: "Akun dosen tidak ditemukan." },
+        { status: 404 },
+      );
+    }
+
+    const { error: profileError } = await admin
+      .from("admin_profiles")
+      .update({ display_name: displayName })
+      .eq("user_id", userId);
+
+    if (profileError) throw profileError;
+
+    const { error: authError } = await admin.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        full_name: displayName,
+      },
+    });
+
+    if (authError) throw authError;
+
+    const { data: memberships, error: membershipError } = await admin
+      .from("course_members")
+      .select("course_id")
+      .eq("user_id", userId)
+      .eq("role", "lecturer");
+
+    if (membershipError) throw membershipError;
+
+    const courseIds = (memberships ?? []).map((item) => item.course_id);
+
+    if (courseIds.length > 0) {
+      const { error: courseError } = await admin
+        .from("courses")
+        .update({ lecturer: displayName })
+        .in("id", courseIds);
+
+      if (courseError) throw courseError;
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Nama dosen berhasil diperbarui.",
+      lecturer: {
+        user_id: userId,
+        display_name: displayName,
+      },
+      updated_course_ids: courseIds,
+    });
+  } catch (error: any) {
+    console.error("UPDATE LECTURER ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: error?.message || "Gagal memperbarui nama dosen.",
+      },
+      { status: 500 },
+    );
+  }
+}
