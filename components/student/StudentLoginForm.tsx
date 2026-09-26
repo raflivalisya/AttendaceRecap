@@ -47,7 +47,7 @@ export default function StudentLoginForm() {
         <div className="student-login-copy">
           <span className="student-kicker">AKADEMIK</span>
           <h1>Masuk Student Portal</h1>
-          <p>Lihat absensi, nilai yang dipublikasikan, dan jadwal kuliah menggunakan akun yang dibuat oleh Super Admin.</p>
+          <p>Lihat absensi, nilai yang dipublikasikan, dan jadwal kuliah menggunakan akun yang dibuat oleh Super Admin. Default Password (NPM) </p>
         </div>
 
         <form onSubmit={submit}>
