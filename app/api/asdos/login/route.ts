@@ -1,164 +1,86 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
-
-export const dynamic = "force-dynamic";
-
-function applyCookies(
-  response: NextResponse,
-  cookiesToSet: Array<{
-    name: string;
-    value: string;
-    options?: Parameters<NextResponse["cookies"]["set"]>[2];
-  }>,
-) {
-  for (const cookie of cookiesToSet) {
-    response.cookies.set(cookie.name, cookie.value, cookie.options);
-  }
-  return response;
-}
+import { createClient } from "@/lib/supabase/server";
+import type { ParsedAssistantSchedule } from "@/lib/asdos/types";
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json().catch(() => ({}));
-    const username = String(body.username ?? "").trim().toLowerCase();
-    const password = String(body.password ?? "");
+  const supabase = await createClient();
 
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: "Username dan password wajib diisi." },
-        { status: 400 },
-      );
-    }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
-      return NextResponse.json(
-        { error: "Format username tidak valid." },
-        { status: 400 },
-      );
-    }
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const publishableKey =
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const { data: profile } = await supabase
+    .from("assistant_profiles")
+    .select("user_id, is_active")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-    if (!supabaseUrl || !publishableKey) {
-      return NextResponse.json(
-        {
-          error:
-            "Konfigurasi Supabase publik belum lengkap. Periksa NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.",
-        },
-        { status: 500 },
-      );
-    }
-
-    // Akun Asdos yang dibuat oleh Super Admin menggunakan pola email internal ini.
-    // Pengguna tetap login dengan username; email ini tidak perlu diketahui pengguna.
-    const authEmail = `${username}@asdos.example.com`;
-
-    const pendingCookies: Array<{
-      name: string;
-      value: string;
-      options?: Parameters<NextResponse["cookies"]["set"]>[2];
-    }> = [];
-
-    const supabase = createServerClient(supabaseUrl, publishableKey, {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          pendingCookies.push(...cookiesToSet);
-        },
-      },
-    });
-
-    const {
-      data: signInData,
-      error: signInError,
-    } = await supabase.auth.signInWithPassword({
-      email: authEmail,
-      password,
-    });
-
-    if (signInError || !signInData.user) {
-      return NextResponse.json(
-        { error: "Username atau password tidak valid." },
-        { status: 401 },
-      );
-    }
-
-    const userId = signInData.user.id;
-
-    const [adminProfileResult, assistantProfileResult] = await Promise.all([
-      supabase
-        .from("admin_profiles")
-        .select("role, display_name")
-        .eq("user_id", userId)
-        .maybeSingle(),
-      supabase
-        .from("assistant_profiles")
-        .select("username, full_name, is_active")
-        .eq("user_id", userId)
-        .maybeSingle(),
-    ]);
-
-    if (adminProfileResult.error) {
-      await supabase.auth.signOut();
-      const response = NextResponse.json(
-        {
-          error: `Gagal membaca role akun: ${adminProfileResult.error.message}`,
-        },
-        { status: 500 },
-      );
-      return applyCookies(response, pendingCookies);
-    }
-
-    if (assistantProfileResult.error) {
-      await supabase.auth.signOut();
-      const response = NextResponse.json(
-        {
-          error: `Gagal membaca profil Asdos: ${assistantProfileResult.error.message}`,
-        },
-        { status: 500 },
-      );
-      return applyCookies(response, pendingCookies);
-    }
-
-    const adminProfile = adminProfileResult.data;
-    const assistantProfile = assistantProfileResult.data;
-
-    if (
-      adminProfile?.role !== "assistant" ||
-      !assistantProfile ||
-      !assistantProfile.is_active ||
-      assistantProfile.username.toLowerCase() !== username
-    ) {
-      await supabase.auth.signOut();
-      const response = NextResponse.json(
-        { error: "Akun bukan Asisten Dosen aktif." },
-        { status: 403 },
-      );
-      return applyCookies(response, pendingCookies);
-    }
-
-    const response = NextResponse.json({
-      ok: true,
-      full_name: assistantProfile.full_name,
-    });
-
-    return applyCookies(response, pendingCookies);
-  } catch (error) {
-    console.error("[ASDOS_LOGIN]", error);
-
+  if (!profile?.is_active) {
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? `Login Asdos gagal: ${error.message}`
-            : "Login Asdos gagal karena error server.",
-      },
-      { status: 500 },
+      { error: "Akun Asdos tidak aktif." },
+      { status: 403 },
     );
   }
+
+  const body = await request.json().catch(() => ({}));
+  const filename = String(body.filename ?? "");
+  const entries = Array.isArray(body.entries)
+    ? (body.entries as ParsedAssistantSchedule[])
+    : [];
+
+  if (!entries.length) {
+    return NextResponse.json(
+      { error: "Tidak ada jadwal untuk disimpan." },
+      { status: 400 },
+    );
+  }
+
+  // course_id hanya bonus bila parser kebetulan menemukan match.
+  // Rekap Asdos TIDAK bergantung pada nilai ini.
+  const rows = entries.map((entry) => ({
+    assistant_user_id: user.id,
+    course_id: entry.matched_course_id || null,
+    weekday: Number(entry.weekday),
+    day_name: String(entry.day_name),
+    start_time: String(entry.start_time),
+    end_time: String(entry.end_time),
+    class_label: String(entry.class_label ?? ""),
+    course_name: String(entry.course_name ?? ""),
+    lecturer_name: String(entry.lecturer_name ?? ""),
+    room: String(entry.room ?? ""),
+    source_filename: filename || null,
+    source_sheet: String(entry.source_sheet ?? ""),
+  }));
+
+  const { error } = await supabase
+    .from("assistant_schedule_templates")
+    .upsert(rows, {
+      onConflict:
+        "assistant_user_id,weekday,start_time,class_label,course_name",
+      ignoreDuplicates: false,
+    });
+
+  if (error) {
+    return NextResponse.json(
+      { error: error.message },
+      { status: 400 },
+    );
+  }
+
+  await supabase.from("assistant_import_batches").insert({
+    assistant_user_id: user.id,
+    filename: filename || "upload.xlsx",
+    imported_count: rows.length,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    imported_count: rows.length,
+    message:
+      `${rows.length} jadwal Asdos tersimpan. Link ke database mata kuliah tidak diperlukan untuk rekap kehadiran.`,
+  });
 }
