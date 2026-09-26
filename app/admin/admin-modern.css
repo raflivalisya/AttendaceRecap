@@ -1832,3 +1832,411 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   ACADEMIC EXPANSION 1-6
+   ========================================================= */
+
+.admin-modern .academic-feature-panel,
+.admin-modern .academic-warning-panel {
+  margin-bottom: 16px;
+}
+
+.admin-modern .academic-filter-grid,
+.admin-modern .academic-account-create,
+.admin-modern .academic-print-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.admin-modern .academic-audit-list {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-modern .academic-audit-item {
+  overflow: hidden;
+  border: 1px solid #dce5ec;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.admin-modern .academic-audit-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 130px 22px;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 0;
+  background: transparent;
+  color: #23374a;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-modern .academic-audit-summary:hover {
+  background: #f7fafc;
+}
+
+.admin-modern .academic-audit-action {
+  display: inline-grid;
+  place-items: center;
+  min-height: 24px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #edf3f7;
+  color: #526a7c;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.admin-modern .academic-audit-action.action-delete {
+  background: #fff0f0;
+  color: #b33333;
+}
+
+.admin-modern .academic-audit-action.action-update {
+  background: #fff7df;
+  color: #8a6405;
+}
+
+.admin-modern .academic-audit-action.action-insert {
+  background: #eaf8f1;
+  color: #14704a;
+}
+
+.admin-modern .academic-audit-main strong,
+.admin-modern .academic-audit-main span {
+  display: block;
+}
+
+.admin-modern .academic-audit-main strong {
+  font-size: 11px;
+}
+
+.admin-modern .academic-audit-main span,
+.admin-modern .academic-audit-summary time {
+  margin-top: 2px;
+  color: #7a8898;
+  font-size: 9px;
+}
+
+.admin-modern .academic-audit-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid #e2e8ee;
+  background: #f8fafc;
+}
+
+.admin-modern .academic-audit-detail strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 9px;
+}
+
+.admin-modern .academic-audit-detail pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #102131;
+  color: #dce8f1;
+  font-size: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.admin-modern .academic-account-edit {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #dbe4eb;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.admin-modern .academic-account-edit > div:first-child strong,
+.admin-modern .academic-account-edit > div:first-child span {
+  display: block;
+}
+
+.admin-modern .academic-account-edit > div:first-child span {
+  margin-top: 4px;
+  color: #718091;
+  font-size: 10px;
+}
+
+.admin-modern .academic-switch-row {
+  min-height: 41px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #40576b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.admin-modern .academic-week-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(155px, 1fr));
+  gap: 8px;
+  min-width: 1120px;
+}
+
+.admin-modern .academic-feature-panel > .panel-body {
+  overflow-x: auto;
+}
+
+.admin-modern .academic-day-column {
+  overflow: hidden;
+  border: 1px solid #dce5ec;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.admin-modern .academic-day-head {
+  padding: 10px;
+  border-bottom: 1px solid #dbe4eb;
+  background: #eef4f8;
+}
+
+.admin-modern .academic-day-head strong,
+.admin-modern .academic-day-head span {
+  display: block;
+}
+
+.admin-modern .academic-day-head strong {
+  font-size: 11px;
+  color: #233c52;
+}
+
+.admin-modern .academic-day-head span {
+  margin-top: 3px;
+  color: #8190a0;
+  font-size: 8px;
+}
+
+.admin-modern .academic-day-body {
+  min-height: 260px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 7px;
+}
+
+.admin-modern .academic-calendar-event {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #ccdce8;
+  border-left: 4px solid #123f65;
+  border-radius: 8px;
+  background: #fff;
+  color: #1b3043;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-modern .academic-calendar-event:hover {
+  background: #f2f7fb;
+}
+
+.admin-modern .academic-calendar-event time,
+.admin-modern .academic-calendar-event strong,
+.admin-modern .academic-calendar-event span,
+.admin-modern .academic-calendar-event small {
+  display: block;
+}
+
+.admin-modern .academic-calendar-event time {
+  color: #1f6895;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.admin-modern .academic-calendar-event strong {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.admin-modern .academic-calendar-event span,
+.admin-modern .academic-calendar-event small {
+  margin-top: 3px;
+  color: #7b8998;
+  font-size: 8px;
+}
+
+.admin-modern .academic-calendar-empty {
+  padding: 25px 0;
+  color: #a2adb7;
+  text-align: center;
+}
+
+.admin-modern .academic-calendar-filter {
+  width: min(340px, 100%);
+}
+
+.admin-modern .academic-print-template-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.admin-modern .academic-print-template-grid article {
+  min-height: 125px;
+  padding: 14px;
+  border: 1px solid #dce5ec;
+  border-radius: 11px;
+  background: #f9fbfc;
+}
+
+.admin-modern .academic-print-template-grid span,
+.admin-modern .academic-print-template-grid strong,
+.admin-modern .academic-print-template-grid small {
+  display: block;
+}
+
+.admin-modern .academic-print-template-grid span {
+  color: #2d759e;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.admin-modern .academic-print-template-grid strong {
+  margin-top: 20px;
+  font-size: 13px;
+}
+
+.admin-modern .academic-print-template-grid small {
+  margin-top: 6px;
+  color: #7d8997;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.admin-modern .academic-warning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-modern .academic-warning-card {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) 18px;
+  gap: 9px;
+  align-items: center;
+  padding: 11px;
+  border: 1px solid #dce4eb;
+  border-radius: 10px;
+  background: #fff;
+  color: #26394b;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-modern .academic-warning-card:hover {
+  background: #f8fafc;
+}
+
+.admin-modern .academic-warning-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3c82aa;
+}
+
+.admin-modern .academic-warning-card.severity-high .academic-warning-dot {
+  background: #c63c3c;
+}
+
+.admin-modern .academic-warning-card.severity-medium .academic-warning-dot {
+  background: #d49b20;
+}
+
+.admin-modern .academic-warning-card strong,
+.admin-modern .academic-warning-card small {
+  display: block;
+}
+
+.admin-modern .academic-warning-card strong {
+  font-size: 10px;
+}
+
+.admin-modern .academic-warning-card small {
+  margin-top: 3px;
+  color: #7b8998;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.admin-modern .academic-all-good {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px;
+  border-radius: 10px;
+  background: #edf8f2;
+  color: #176747;
+}
+
+.admin-modern .academic-all-good > span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #1d8b5d;
+  color: #fff;
+}
+
+.admin-modern .academic-all-good strong,
+.admin-modern .academic-all-good small {
+  display: block;
+}
+
+.admin-modern .academic-all-good small {
+  margin-top: 3px;
+  font-size: 9px;
+}
+
+@media (max-width: 900px) {
+  .admin-modern .academic-filter-grid,
+  .admin-modern .academic-account-create,
+  .admin-modern .academic-print-grid,
+  .admin-modern .academic-audit-detail,
+  .admin-modern .academic-warning-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-modern .academic-account-edit {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-modern .academic-print-template-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .admin-modern .academic-audit-summary {
+    grid-template-columns: 62px minmax(0, 1fr) 18px;
+  }
+
+  .admin-modern .academic-audit-summary time {
+    display: none;
+  }
+
+  .admin-modern .academic-print-template-grid {
+    grid-template-columns: 1fr;
+  }
+}

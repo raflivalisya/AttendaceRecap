@@ -7,12 +7,12 @@ export function createAdminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL belum dikonfigurasi.");
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL belum tersedia.");
   }
 
   if (!secretKey) {
     throw new Error(
-      "SUPABASE_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY belum dikonfigurasi.",
+      "SUPABASE_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY belum tersedia.",
     );
   }
 

@@ -33,6 +33,11 @@ import AdminGlobalSearch from "@/components/admin/pro/AdminGlobalSearch";
 import AdminNotificationCenter from "@/components/admin/pro/AdminNotificationCenter";
 import AdminToast from "@/components/admin/pro/AdminToast";
 import { useAdminConfirm } from "@/components/admin/pro/useAdminConfirm";
+import SemesterArchiveManager from "@/components/admin/academic/SemesterArchiveManager";
+import AuditLogViewer from "@/components/admin/academic/AuditLogViewer";
+import StudentAccountManager from "@/components/admin/academic/StudentAccountManager";
+import AcademicCalendarView from "@/components/admin/academic/AcademicCalendarView";
+import OfficialPrintCenter from "@/components/admin/academic/OfficialPrintCenter";
 
 import type { LecturerAccount } from "@/lib/auth/lecturers";
 
@@ -63,7 +68,17 @@ type Props = {
 
 
 type Tab = "attendance" | "grades" | "students" | "settings";
-type AdminView = "home" | "workspace" | "analytics" | "lecturers" | "assistants";
+type AdminView =
+  | "home"
+  | "workspace"
+  | "analytics"
+  | "calendar"
+  | "print"
+  | "audit"
+  | "archive"
+  | "student_accounts"
+  | "lecturers"
+  | "assistants";
 
 type StatusValue = AttendanceStatus | "";
 
@@ -192,17 +207,13 @@ const visibleCourses =
 
 
 
-      return courses.filter(
+      return courses.filter((course) => {
+        const archived = Boolean(
+          (course as Course & { is_archived?: boolean }).is_archived,
+        );
 
-        (course) =>
-
-          access.canSeeCourse(
-
-            course.id
-
-          )
-
-      );
+        return !archived && access.canSeeCourse(course.id);
+      });
 
     },
 
@@ -1420,6 +1431,55 @@ async function refreshAttendance() {
           Analitik
         </button>
 
+        <button
+          type="button"
+          className={adminView === "calendar" ? "active" : ""}
+          onClick={() => setAdminView("calendar")}
+        >
+          <span>🗓️</span>
+          Kalender
+        </button>
+
+        <button
+          type="button"
+          className={adminView === "print" ? "active" : ""}
+          onClick={() => setAdminView("print")}
+        >
+          <span>🖨️</span>
+          Cetak
+        </button>
+
+        <button
+          type="button"
+          className={adminView === "audit" ? "active" : ""}
+          onClick={() => setAdminView("audit")}
+        >
+          <span>🧾</span>
+          Audit
+        </button>
+
+        {access.isSuperAdmin && (
+          <button
+            type="button"
+            className={adminView === "archive" ? "active" : ""}
+            onClick={() => setAdminView("archive")}
+          >
+            <span>🗄️</span>
+            Arsip
+          </button>
+        )}
+
+        {access.isSuperAdmin && (
+          <button
+            type="button"
+            className={adminView === "student_accounts" ? "active" : ""}
+            onClick={() => setAdminView("student_accounts")}
+          >
+            <span>🎓</span>
+            Akun Mhs
+          </button>
+        )}
+
         {access.isSuperAdmin && (
           <button
             type="button"
@@ -1497,6 +1557,41 @@ async function refreshAttendance() {
         assessments={assessments}
         grades={grades}
       />
+    )}
+
+    {adminView === "calendar" && (
+      <AcademicCalendarView
+        courses={visibleCourses}
+        onOpenCourse={(courseId) => openCourseWorkspace(courseId, "attendance")}
+      />
+    )}
+
+    {adminView === "print" && (
+      <OfficialPrintCenter courses={visibleCourses} />
+    )}
+
+    {adminView === "audit" && (
+      <AuditLogViewer courses={courses} />
+    )}
+
+    {access.isSuperAdmin && adminView === "archive" && (
+      <SemesterArchiveManager
+        courses={courses as Array<Course & { is_archived?: boolean; archived_at?: string | null }>}
+        onChanged={(updated) => {
+          setCourses((items) => {
+            const exists = items.some((course) => course.id === updated.id);
+            if (!exists) return [...items, updated as Course];
+
+            return items.map((course) =>
+              course.id === updated.id ? ({ ...course, ...updated } as Course) : course,
+            );
+          });
+        }}
+      />
+    )}
+
+    {access.isSuperAdmin && adminView === "student_accounts" && (
+      <StudentAccountManager students={students} />
     )}
 
     {access.isSuperAdmin && adminView === "lecturers" && (

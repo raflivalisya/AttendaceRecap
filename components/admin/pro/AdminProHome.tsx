@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import AutoWarningCenter from "@/components/admin/academic/AutoWarningCenter";
 import type {
   Assessment,
   Attendance,
@@ -458,6 +459,15 @@ export default function AdminProHome({
           </div>
         </section>
       </div>
+
+      <AutoWarningCenter
+        courses={courses}
+        students={students}
+        meetings={meetings}
+        attendance={attendance}
+        assessments={assessments}
+        onOpen={onSelectCourse}
+      />
 
       <section className="panel admin-pro-progress-panel">
         <div className="panel-head">

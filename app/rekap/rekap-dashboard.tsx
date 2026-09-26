@@ -42,6 +42,15 @@ export default function RekapDashboard({
    * 1. Dosen
    * 2. Kelas / mata kuliah
    */
+  const activeCourses = useMemo(
+    () =>
+      courses.filter(
+        (course) =>
+          !Boolean((course as Course & { is_archived?: boolean }).is_archived),
+      ),
+    [courses],
+  );
+
   const [selectedLecturer, setSelectedLecturer] = useState("");
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [tab, setTab] = useState<"attendance" | "grades">("attendance");
@@ -49,34 +58,34 @@ export default function RekapDashboard({
   const lecturers = useMemo(() => {
     return Array.from(
       new Set(
-        courses
+        activeCourses
           .map((item) => item.lecturer?.trim())
           .filter((value): value is string => Boolean(value)),
       ),
     ).sort((a, b) => a.localeCompare(b, "id"));
-  }, [courses]);
+  }, [activeCourses]);
 
   const lecturerCourses = useMemo(() => {
     if (!selectedLecturer) return [];
 
-    return courses
+    return activeCourses
       .filter((item) => item.lecturer?.trim() === selectedLecturer)
       .sort((a, b) => {
         const nameCompare = a.name.localeCompare(b.name, "id");
         if (nameCompare !== 0) return nameCompare;
         return a.class_name.localeCompare(b.class_name, "id");
       });
-  }, [courses, selectedLecturer]);
+  }, [activeCourses, selectedLecturer]);
 
   const course = useMemo(() => {
     if (!selectedLecturer || !selectedCourseId) return undefined;
 
-    return courses.find(
+    return activeCourses.find(
       (item) =>
         item.id === selectedCourseId &&
         item.lecturer?.trim() === selectedLecturer,
     );
-  }, [courses, selectedLecturer, selectedCourseId]);
+  }, [activeCourses, selectedLecturer, selectedCourseId]);
 
   const courseStudents = useMemo(
     () =>
@@ -162,7 +171,7 @@ export default function RekapDashboard({
     setTab("attendance");
   }
 
-  if (courses.length === 0) {
+  if (activeCourses.length === 0) {
     return (
       <section className="page rekap-page">
         <div className="shell rekap-shell">
@@ -186,6 +195,7 @@ export default function RekapDashboard({
             HEADER PORTAL — TERINSPIRASI LAYOUT SIAKAD
             ====================================================== */}
         <div className="portal-header">
+          <a className="portal-student-link" href="/student/login">Student Portal →</a>
           <div className="portal-brand">
             <div className="portal-emblem">UTI</div>
 
@@ -1199,6 +1209,23 @@ export default function RekapDashboard({
           color: #718096;
         }
 
+        .portal-header { position: relative; }
+        .portal-student-link {
+          position: absolute;
+          right: 18px;
+          top: 16px;
+          z-index: 3;
+          padding: 7px 10px;
+          border: 1px solid rgba(255,255,255,.25);
+          border-radius: 999px;
+          background: rgba(255,255,255,.08);
+          color: #fff;
+          text-decoration: none;
+          font-size: 10px;
+          font-weight: 800;
+        }
+        .portal-student-link:hover { background: rgba(255,255,255,.16); }
+
         @media (max-width: 980px) {
           .portal-start-grid {
             grid-template-columns: 1fr;
@@ -1226,6 +1253,13 @@ export default function RekapDashboard({
 
           .portal-header {
             border-radius: 12px 12px 0 0;
+          }
+
+          .portal-student-link {
+            position: static;
+            display: block;
+            width: max-content;
+            margin: 10px 12px 0 auto;
           }
 
           .portal-brand {
