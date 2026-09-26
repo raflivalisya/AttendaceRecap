@@ -18,7 +18,6 @@ export default function ImportStudentsTxt({
   onSuccess,
 }: Props) {
   const supabase = createClient();
-
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(false);
@@ -26,7 +25,6 @@ export default function ImportStudentsTxt({
   const [preview, setPreview] = useState<StudentImport[]>([]);
   const [message, setMessage] = useState("");
 
-  // Membaca isi TXT
   const parseTxt = (text: string): StudentImport[] => {
     const lines = text
       .split(/\r?\n/)
@@ -36,22 +34,28 @@ export default function ImportStudentsTxt({
     const students: StudentImport[] = [];
 
     for (const line of lines) {
-      // Mendukung:
-      // 22316009|NUR RAHMATULLAH
-      // 22316009;NUR RAHMATULLAH
-      // 22316009<TAB>NUR RAHMATULLAH
-      // 22316009,NUR RAHMATULLAH
+      let npm = "";
+      let name = "";
 
-      const parts = line
+      // Format dengan delimiter: | ; TAB ,
+      const delimiterParts = line
         .split(/\||;|\t|,/)
-        .map((item) => item.trim());
+        .map((item) => item.trim())
+        .filter(Boolean);
 
-      if (parts.length < 2) {
-        continue;
+      if (delimiterParts.length >= 2) {
+        npm = delimiterParts[0];
+        name = delimiterParts.slice(1).join(" ").trim();
+      } else {
+        // Format tanpa delimiter:
+        // 22316009 NUR RAHMATULLAH
+        const match = line.match(/^(\S+)\s+(.+)$/);
+
+        if (!match) continue;
+
+        npm = match[1].trim();
+        name = match[2].trim();
       }
-
-      const npm = parts[0];
-      const name = parts.slice(1).join(" ").trim();
 
       // Lewati header
       if (
@@ -62,9 +66,7 @@ export default function ImportStudentsTxt({
         continue;
       }
 
-      if (!npm || !name) {
-        continue;
-      }
+      if (!npm || !name) continue;
 
       students.push({
         npm,
@@ -72,14 +74,13 @@ export default function ImportStudentsTxt({
       });
     }
 
-    // Hilangkan NPM yang duplikat di dalam file
+    // Hapus NPM duplikat di dalam file
     return students.filter(
       (student, index, self) =>
         index === self.findIndex((item) => item.npm === student.npm)
     );
   };
 
-  // Ketika file dipilih
   const handleFile = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -99,7 +100,6 @@ export default function ImportStudentsTxt({
 
     try {
       const text = await file.text();
-
       const students = parseTxt(text);
 
       if (students.length === 0) {
@@ -111,19 +111,16 @@ export default function ImportStudentsTxt({
       }
 
       setPreview(students);
-
       setMessage(
         `${students.length} mahasiswa berhasil dibaca dari file.`
       );
     } catch (error) {
       console.error(error);
-
       setMessage("Gagal membaca file.");
       setPreview([]);
     }
   };
 
-  // Import ke Supabase
   const handleImport = async () => {
     if (!courseId) {
       setMessage("Pilih kelas terlebih dahulu.");
@@ -155,8 +152,23 @@ export default function ImportStudentsTxt({
         throw error;
       }
 
+      const accountResponse = await fetch("/api/student-accounts/ensure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_id: courseId,
+          students: preview,
+        }),
+      });
+
+      const accountResult = await accountResponse
+        .json()
+        .catch(() => ({}));
+
       setMessage(
-        `${preview.length} mahasiswa berhasil diimport.`
+        accountResponse.ok
+          ? `${preview.length} mahasiswa berhasil diimport. ${accountResult.created ?? 0} akun Student Portal baru dibuat dengan password default = NPM.`
+          : `${preview.length} mahasiswa berhasil diimport, tetapi pembuatan akun Student Portal gagal: ${accountResult.error ?? "error tidak diketahui"}`
       );
 
       setPreview([]);
@@ -166,9 +178,7 @@ export default function ImportStudentsTxt({
         inputRef.current.value = "";
       }
 
-      if (onSuccess) {
-        onSuccess();
-      }
+      onSuccess?.();
     } catch (error: any) {
       console.error(error);
 
@@ -202,21 +212,23 @@ export default function ImportStudentsTxt({
         </p>
       </div>
 
-      {/* Format contoh */}
       <div className="mb-4 rounded-lg bg-gray-50 p-4">
         <p className="mb-2 text-sm font-medium text-gray-700">
-          Format TXT:
+          Contoh format TXT:
         </p>
 
         <pre className="overflow-x-auto text-sm text-gray-600">
 {`NPM|Nama Mahasiswa
 22316009|NUR RAHMATULLAH
 23316017|WIDYAWATI
-25316001|ACHMED FAOZAN ADIPUTRA`}
+25316001|ACHMED FAOZAN ADIPUTRA
+
+Atau tanpa tanda |:
+22316009 NUR RAHMATULLAH
+23316017 WIDYAWATI`}
         </pre>
       </div>
 
-      {/* Upload */}
       <div className="flex flex-wrap items-center gap-3">
         <input
           ref={inputRef}
@@ -233,14 +245,12 @@ export default function ImportStudentsTxt({
         )}
       </div>
 
-      {/* Pesan */}
       {message && (
         <div className="mt-4 rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-700">
           {message}
         </div>
       )}
 
-      {/* Preview */}
       {preview.length > 0 && (
         <div className="mt-5">
           <div className="mb-3 flex items-center justify-between">
@@ -294,7 +304,6 @@ export default function ImportStudentsTxt({
             </table>
           </div>
 
-          {/* Tombol */}
           <div className="mt-4 flex gap-3">
             <button
               type="button"

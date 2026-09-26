@@ -58,6 +58,7 @@ export async function GET() {
       assessments: [],
       grades: [],
       schedules: [],
+      grade_scales: [],
     });
   }
 
@@ -67,6 +68,7 @@ export async function GET() {
     attendanceResult,
     assessmentsResult,
     schedulesResult,
+    gradeScalesResult,
   ] = await Promise.all([
     admin.from("courses").select("*").in("id", courseIds),
     admin
@@ -88,6 +90,11 @@ export async function GET() {
       .in("course_id", courseIds)
       .order("weekday")
       .order("start_time"),
+    admin
+      .from("grade_letter_scales")
+      .select("*")
+      .in("course_id", courseIds)
+      .order("sort_order"),
   ]);
 
   const errors = [
@@ -96,6 +103,7 @@ export async function GET() {
     attendanceResult.error,
     assessmentsResult.error,
     schedulesResult.error,
+    gradeScalesResult.error,
   ].filter(Boolean);
 
   if (errors.length) {
@@ -142,5 +150,6 @@ export async function GET() {
     assessments: assessmentsResult.data ?? [],
     grades,
     schedules: schedulesResult.data ?? [],
+    grade_scales: gradeScalesResult.data ?? [],
   });
 }

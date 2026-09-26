@@ -38,6 +38,11 @@ import AuditLogViewer from "@/components/admin/academic/AuditLogViewer";
 import StudentAccountManager from "@/components/admin/academic/StudentAccountManager";
 import AcademicCalendarView from "@/components/admin/academic/AcademicCalendarView";
 import OfficialPrintCenter from "@/components/admin/academic/OfficialPrintCenter";
+import GradeScaleManager from "@/components/admin/academic/GradeScaleManager";
+import {
+  resolveGradeLetter,
+  type GradeLetterScale,
+} from "@/lib/grade-letter";
 
 import type { LecturerAccount } from "@/lib/auth/lecturers";
 
@@ -153,6 +158,8 @@ export default function AdminPanel(props: Props) {
   const [assessments, setAssessments] = useState(props.initialAssessments);
 
   const [grades, setGrades] = useState(props.initialGrades);
+
+  const [gradeScales, setGradeScales] = useState<GradeLetterScale[]>([]);
 
   const [selectedCourseId, setSelectedCourseId] = useState(props.initialCourses[0]?.id ?? "");
 
@@ -460,6 +467,38 @@ const canManageSelectedGrades =
   }, [access.loading, visibleCourses, selectedCourseId, meetings, students, attendance]);
 
 
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGradeScales() {
+      if (!selectedCourseId) {
+        setGradeScales([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("grade_letter_scales")
+        .select("*")
+        .eq("course_id", selectedCourseId)
+        .order("sort_order");
+
+      if (!cancelled) {
+        if (error) {
+          console.error("LOAD GRADE SCALES ERROR:", error);
+          setGradeScales([]);
+        } else {
+          setGradeScales((data ?? []) as GradeLetterScale[]);
+        }
+      }
+    }
+
+    void loadGradeScales();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCourseId, supabase]);
 
   const selectedMeeting = courseMeetings.find((m) => m.id === selectedMeetingId);
 
@@ -815,9 +854,32 @@ async function refreshStudents() {
 
     if (error || !data) { notify(`Gagal menambah mahasiswa: ${error?.message}`); return; }
 
-    const student = data as Student; setStudents((items) => [...items, student]); setAttendanceDraft((d) => ({ ...d, [student.id]: "" }));
+    const student = data as Student;
 
-    setNewNpm(""); setNewName(""); notify("Mahasiswa berhasil ditambahkan.");
+    const accountResponse = await fetch("/api/student-accounts/ensure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        course_id: selectedCourse.id,
+        students: [{ npm: student.npm, name: student.name }],
+      }),
+    });
+
+    const accountResult = await accountResponse
+      .json()
+      .catch(() => ({}));
+
+    setStudents((items) => [...items, student]);
+    setAttendanceDraft((d) => ({ ...d, [student.id]: "" }));
+
+    setNewNpm("");
+    setNewName("");
+
+    notify(
+      accountResponse.ok
+        ? "Mahasiswa berhasil ditambahkan. Akun Student Portal otomatis dibuat dengan password default = NPM."
+        : `Mahasiswa berhasil ditambahkan, tetapi akun Student Portal gagal dibuat: ${accountResult.error ?? "error tidak diketahui"}`,
+    );
 
   }
 
@@ -1768,13 +1830,22 @@ async function refreshAttendance() {
 
 )}
 
+            {selectedCourse && (
+              <GradeScaleManager
+                courseId={selectedCourse.id}
+                canEdit={canManageSelectedGrades}
+                scales={gradeScales}
+                onChange={setGradeScales}
+              />
+            )}
+
             {canManageSelectedGrades && <div className="assessment-manager"><div className="inline-form"><div className="field"><label>Nama Komponen</label><input className="input" value={newAssessment.name} onChange={(e) => setNewAssessment({ ...newAssessment, name: e.target.value })} placeholder="Tugas 2" /></div><div className="field small-field"><label>Kategori</label><select className="select" value={newAssessment.category} onChange={(e) => setNewAssessment({ ...newAssessment, category: e.target.value })}><option>Tugas</option><option>Quiz</option><option>UTS</option><option>UAS</option><option>Proyek</option><option>Lainnya</option></select></div><div className="field small-field"><label>Maks.</label><input className="input" type="number" min="1" value={newAssessment.max_score} onChange={(e) => setNewAssessment({ ...newAssessment, max_score: Number(e.target.value) })}/></div><div className="field small-field"><label>Bobot %</label><input className="input" type="number" min="0" max="100" value={newAssessment.weight} onChange={(e) => setNewAssessment({ ...newAssessment, weight: Number(e.target.value) })}/></div><button className="btn btn-secondary" onClick={addAssessment}>Tambah Komponen</button></div>
 
               <div className="assessment-chips">{courseAssessments.map((item) => <div className="assessment-chip" key={item.id}><span><strong>{item.name}</strong><small>{item.category} · maks {item.max_score} · {item.weight}%</small></span><button onClick={() => editAssessment(item)}>Edit</button><button className="danger-link" onClick={() => deleteAssessment(item)}>Hapus</button></div>)}</div>
 
             </div>}
 
-            <div className="table-wrap"><table className="admin-table grade-input-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{courseAssessments.map((item) => <th key={item.id}>{item.name}<small>Maks {item.max_score}</small></th>)}<th>Nilai Akhir</th></tr></thead><tbody>{courseStudents.map((student, index) => { const final = calculateFinalScore(student.id, courseAssessments, gradeMap); return <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td>{courseAssessments.map((item) => { const key = `${item.id}:${student.id}`; const initialValue = gradeDraft[key] ?? (gradeMap.has(key) ? String(gradeMap.get(key)) : ""); return <td key={item.id}><input className="score-input" type="number" min="0" max={item.max_score} step="0.01" value={initialValue} disabled={!canManageSelectedGrades} onChange={(e) => setGradeDraft((d) => ({ ...d, [key]: e.target.value }))}/></td>; })}<td><strong>{final.score.toFixed(2)}</strong></td></tr>; })}</tbody></table></div>
+            <div className="table-wrap"><table className="admin-table grade-input-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{courseAssessments.map((item) => <th key={item.id}>{item.name}<small>Maks {item.max_score}</small></th>)}<th>Nilai Akhir</th><th>Huruf Mutu</th></tr></thead><tbody>{courseStudents.map((student, index) => { const final = calculateFinalScore(student.id, courseAssessments, gradeMap); const letter = resolveGradeLetter(final.score, gradeScales); return <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td>{courseAssessments.map((item) => { const key = `${item.id}:${student.id}`; const initialValue = gradeDraft[key] ?? (gradeMap.has(key) ? String(gradeMap.get(key)) : ""); return <td key={item.id}><input className="score-input" type="number" min="0" max={item.max_score} step="0.01" value={initialValue} disabled={!canManageSelectedGrades} onChange={(e) => setGradeDraft((d) => ({ ...d, [key]: e.target.value }))}/></td>; })}<td><strong>{final.score.toFixed(2)}</strong></td><td><span className="badge good">{letter}</span></td></tr>; })}</tbody></table></div>
 
             <div className="save-row"><span className="muted">Pastikan total bobot idealnya 100%.</span><button className="btn btn-primary" onClick={saveGrades} disabled={saving || !canManageSelectedGrades}>{saving ? "Menyimpan..." : "Simpan Semua Nilai"}</button></div>
 

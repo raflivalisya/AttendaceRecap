@@ -1,6 +1,10 @@
 "use client";
 
 import type { Assessment, Attendance, Course, Grade, Meeting, Student } from "@/lib/types";
+import {
+  resolveGradeLetter,
+  type GradeLetterScale,
+} from "@/lib/grade-letter";
 
 type PrintType = "attendance" | "grades" | "meetings" | "summary";
 
@@ -12,9 +16,10 @@ type Props = {
   attendance: Attendance[];
   assessments: Assessment[];
   grades: Grade[];
+  gradeScales: GradeLetterScale[];
 };
 
-export default function OfficialPrintDocument({ type, course, students, meetings, attendance, assessments, grades }: Props) {
+export default function OfficialPrintDocument({ type, course, students, meetings, attendance, assessments, grades, gradeScales }: Props) {
   const meetingIds = new Set(meetings.map((m) => m.id));
   const heldIds = new Set(attendance.filter((a) => meetingIds.has(a.meeting_id)).map((a) => a.meeting_id));
 
@@ -65,7 +70,7 @@ export default function OfficialPrintDocument({ type, course, students, meetings
         )}
 
         {type === "grades" && (
-          <table><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{assessments.map((a) => <th key={a.id}>{a.name}<small>{a.weight}%</small></th>)}<th>Akhir</th></tr></thead><tbody>{students.map((student, i) => <tr key={student.id}><td>{i+1}</td><td>{student.npm}</td><td>{student.name}</td>{assessments.map((a) => <td key={a.id}>{grades.find((g) => g.assessment_id === a.id && g.student_id === student.id)?.score ?? "-"}</td>)}<td><strong>{finalScore(student.id).toFixed(2)}</strong></td></tr>)}</tbody></table>
+          <table><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{assessments.map((a) => <th key={a.id}>{a.name}<small>{a.weight}%</small></th>)}<th>Akhir</th><th>Huruf</th></tr></thead><tbody>{students.map((student, i) => { const score = finalScore(student.id); return <tr key={student.id}><td>{i+1}</td><td>{student.npm}</td><td>{student.name}</td>{assessments.map((a) => <td key={a.id}>{grades.find((g) => g.assessment_id === a.id && g.student_id === student.id)?.score ?? "-"}</td>)}<td><strong>{score.toFixed(2)}</strong></td><td><strong>{resolveGradeLetter(score, gradeScales)}</strong></td></tr>; })}</tbody></table>
         )}
 
         {type === "meetings" && (

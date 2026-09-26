@@ -18,12 +18,13 @@ export default async function AdminPrintPage({ params, searchParams }: { params:
   const { data: course } = await supabase.from("courses").select("*").eq("id", courseId).maybeSingle();
   if (!course) redirect("/admin");
 
-  const [studentsRes, meetingsRes, attendanceRes, assessmentsRes, gradesRes] = await Promise.all([
+  const [studentsRes, meetingsRes, attendanceRes, assessmentsRes, gradesRes, gradeScalesRes] = await Promise.all([
     supabase.from("students").select("*").eq("course_id", courseId).order("npm"),
     supabase.from("meetings").select("*").eq("course_id", courseId).order("meeting_no"),
     supabase.from("attendance").select("*"),
     supabase.from("assessments").select("*").eq("course_id", courseId).order("sort_order"),
     supabase.from("grades").select("*"),
+    supabase.from("grade_letter_scales").select("*").eq("course_id", courseId).order("sort_order"),
   ]);
 
   const students = (studentsRes.data ?? []) as Student[];
@@ -36,5 +37,5 @@ export default async function AdminPrintPage({ params, searchParams }: { params:
   const attendance = ((attendanceRes.data ?? []) as Attendance[]).filter((a) => meetingIds.has(a.meeting_id) && studentIds.has(a.student_id));
   const grades = ((gradesRes.data ?? []) as Grade[]).filter((g) => assessmentIds.has(g.assessment_id) && studentIds.has(g.student_id));
 
-  return <OfficialPrintDocument type={type} course={course as Course} students={students} meetings={meetings} attendance={attendance} assessments={assessments} grades={grades} />;
+  return <OfficialPrintDocument type={type} course={course as Course} students={students} meetings={meetings} attendance={attendance} assessments={assessments} grades={grades} gradeScales={(gradeScalesRes.data ?? [])} />;
 }

@@ -58,7 +58,7 @@ export default function OfficialPrintCenter({ courses }: Props) {
             <span>01</span><strong>Absensi</strong><small>H/I/S/A per pertemuan dan persentase kehadiran.</small>
           </article>
           <article>
-            <span>02</span><strong>Nilai</strong><small>Komponen, bobot, skor mahasiswa, dan nilai akhir.</small>
+            <span>02</span><strong>Nilai</strong><small>Komponen, bobot, skor mahasiswa, nilai akhir, dan huruf mutu.</small>
           </article>
           <article>
             <span>03</span><strong>Pertemuan</strong><small>Daftar P1–Pn beserta tanggal perkuliahan.</small>

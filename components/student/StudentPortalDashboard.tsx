@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Assessment, Attendance, Course, Grade, Meeting, Student } from "@/lib/types";
+import {
+  resolveGradeLetter,
+  type GradeLetterScale,
+} from "@/lib/grade-letter";
 
 type Schedule = {
   id: string;
@@ -24,6 +28,7 @@ type Payload = {
   assessments: Assessment[];
   grades: Grade[];
   schedules: Schedule[];
+  grade_scales: GradeLetterScale[];
 };
 
 type Tab = "overview" | "attendance" | "grades" | "schedule";
@@ -78,6 +83,9 @@ export default function StudentPortalDashboard() {
   const courseMeetings = (data?.meetings ?? []).filter((meeting) => meeting.course_id === courseId).sort((a,b) => a.meeting_no - b.meeting_no);
   const courseAssessments = (data?.assessments ?? []).filter((item) => item.course_id === courseId).sort((a,b) => a.sort_order - b.sort_order);
   const courseSchedules = (data?.schedules ?? []).filter((item) => item.course_id === courseId).sort((a,b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time));
+  const courseGradeScales = (data?.grade_scales ?? [])
+    .filter((item) => item.course_id === courseId)
+    .sort((a, b) => a.sort_order - b.sort_order);
 
   const attendanceRows = studentRow
     ? courseMeetings.map((meeting) => ({
@@ -98,6 +106,11 @@ export default function StudentPortalDashboard() {
         return sum + (Number(grade.score) / max) * Number(assessment.weight);
       }, 0)
     : 0;
+
+  const gradeLetter =
+    selectedCourse?.publish_grades
+      ? resolveGradeLetter(weightedScore, courseGradeScales)
+      : "—";
 
   if (loading) {
     return <main className="student-portal-page"><div className="student-loading">Memuat Student Portal...</div></main>;
@@ -160,6 +173,7 @@ export default function StudentPortalDashboard() {
                 <div><strong>{percentage}%</strong><span>Kehadiran</span></div>
                 <div><strong>{heldRows.length}/{courseMeetings.length || selectedCourse.meeting_count}</strong><span>Pertemuan</span></div>
                 <div><strong>{selectedCourse.publish_grades ? weightedScore.toFixed(2) : "—"}</strong><span>Nilai Akhir</span></div>
+                <div><strong>{selectedCourse.publish_grades ? gradeLetter : "—"}</strong><span>Huruf Mutu</span></div>
               </div>
             </section>
 
@@ -194,14 +208,31 @@ export default function StudentPortalDashboard() {
 
             {tab === "grades" && (
               <section className="student-card">
-                <div className="student-card-head"><h2>Nilai</h2>{selectedCourse.publish_grades && <span>Nilai akhir {weightedScore.toFixed(2)}</span>}</div>
+                <div className="student-card-head"><h2>Nilai</h2>{selectedCourse.publish_grades && <span>Nilai akhir {weightedScore.toFixed(2)} · Huruf {gradeLetter}</span>}</div>
                 {!selectedCourse.publish_grades ? (
                   <div className="student-private-note">Nilai belum dipublikasikan oleh dosen.</div>
                 ) : (
+                  <>
                   <div className="student-table-wrap"><table><thead><tr><th>Komponen</th><th>Bobot</th><th>Nilai</th></tr></thead><tbody>{courseAssessments.map((assessment) => {
                     const grade = data.grades.find((item) => item.assessment_id === assessment.id && item.student_id === studentRow.id);
                     return <tr key={assessment.id}><td>{assessment.name}</td><td>{assessment.weight}%</td><td><strong>{grade?.score ?? "—"}</strong></td></tr>;
                   })}</tbody></table></div>
+                  <div className="student-table-wrap" style={{ marginTop: 12 }}>
+                    <table>
+                      <thead>
+                        <tr><th>Huruf Mutu</th><th>Range Nilai Akhir</th></tr>
+                      </thead>
+                      <tbody>
+                        {courseGradeScales.map((scale) => (
+                          <tr key={scale.id ?? `${scale.letter}-${scale.min_score}`}>
+                            <td><strong>{scale.letter}</strong></td>
+                            <td>{scale.min_score} – {scale.max_score}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  </>
                 )}
               </section>
             )}

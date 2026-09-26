@@ -15,7 +15,12 @@ import type {
   Meeting,
   Student,
 } from "@/lib/types";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  resolveGradeLetter,
+  type GradeLetterScale,
+} from "@/lib/grade-letter";
 import PrintAttendance from "@/components/admin/PrintAttendance";
 
 type Props = {
@@ -54,6 +59,8 @@ export default function RekapDashboard({
   const [selectedLecturer, setSelectedLecturer] = useState("");
   const [selectedCourseId, setSelectedCourseId] = useState("");
   const [tab, setTab] = useState<"attendance" | "grades">("attendance");
+  const [gradeScales, setGradeScales] = useState<GradeLetterScale[]>([]);
+  const supabase = useMemo(() => createClient(), []);
 
   const lecturers = useMemo(() => {
     return Array.from(
@@ -86,6 +93,33 @@ export default function RekapDashboard({
         item.lecturer?.trim() === selectedLecturer,
     );
   }, [activeCourses, selectedLecturer, selectedCourseId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadGradeScales() {
+      if (!course?.id) {
+        setGradeScales([]);
+        return;
+      }
+
+      const { data } = await supabase
+        .from("grade_letter_scales")
+        .select("*")
+        .eq("course_id", course.id)
+        .order("sort_order");
+
+      if (!cancelled) {
+        setGradeScales((data ?? []) as GradeLetterScale[]);
+      }
+    }
+
+    void loadGradeScales();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [course?.id, supabase]);
 
   const courseStudents = useMemo(
     () =>
@@ -654,6 +688,7 @@ export default function RekapDashboard({
                             ))}
 
                             <th>Nilai Akhir</th>
+                            <th>Huruf Mutu</th>
                             <th>Kelengkapan</th>
                           </tr>
                         </thead>
@@ -689,6 +724,12 @@ export default function RekapDashboard({
 
                                 <td>
                                   <strong>{final.score.toFixed(2)}</strong>
+                                </td>
+
+                                <td>
+                                  <span className="badge good">
+                                    {resolveGradeLetter(final.score, gradeScales)}
+                                  </span>
                                 </td>
 
                                 <td>
