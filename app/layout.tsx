@@ -1,44 +1,26 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "./globals.css";
-import type {
-  Viewport,
-} from "next";
+import "./uiux-overhaul.css";
+import SiteChrome from "@/components/ui/SiteChrome";
 
 export const metadata: Metadata = {
-  title: "Rekap Akademik Mahasiswa",
-  description: "Website multi-kelas untuk rekap absensi dan nilai berbasis Next.js dan Supabase",
+  title: {
+    default: "AttendanceRecap",
+    template: "%s · AttendanceRecap",
+  },
+  description:
+    "Portal akademik untuk rekap kehadiran, nilai, jadwal, mahasiswa, dosen, dan asisten dosen.",
 };
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-};
-
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="id">
       <body>
-        <header className="site-header">
-          <div className="shell nav-wrap">
-            <Link href="/rekap" className="brand">
-              <span className="brand-mark">RA</span>
-              <span>
-                <strong>Rekap Akademik</strong>
-                <small>Absensi & Nilai</small>
-              </span>
-            </Link>
-            <nav className="main-nav" aria-label="Navigasi utama">
-              <Link href="/rekap">Rekap</Link>
-              <Link href="/admin">Admin</Link>
-            </nav>
-          </div>
-        </header>
-        <main>{children}</main>
-        <footer className="site-footer">
-          <div className="shell">Rekap Akademik Mahasiswa · by. Rafli Indra Valisya</div>
-        </footer>
+        <SiteChrome>{children}</SiteChrome>
       </body>
     </html>
   );

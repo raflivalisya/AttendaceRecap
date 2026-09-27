@@ -2240,3 +2240,160 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   UI/UX OVERHAUL — final polish
+   Progressive enhancement only. No business logic changed.
+   ========================================================= */
+
+.admin-modern {
+  --admin-navy-950: var(--ux-primary-950, #071b2e);
+  --admin-navy-900: var(--ux-primary-900, #0b2942);
+  --admin-navy-800: var(--ux-primary-800, #123f65);
+  --admin-navy-700: var(--ux-primary-700, #1c587f);
+  --admin-text: var(--ux-text, #172333);
+  --admin-muted: var(--ux-muted, #718096);
+  --admin-line: var(--ux-line, #d9e2ea);
+  background: #f4f6f8 !important;
+}
+
+.admin-modern .shell { width: min(1460px, calc(100% - 32px)) !important; }
+
+/* Lower visual noise: one strong header, quiet content below */
+.admin-modern .hero {
+  min-height: 126px !important;
+  padding: 23px 25px !important;
+  border-radius: 16px !important;
+  background: linear-gradient(135deg, #081d31 0%, #123f65 68%, #1d5d89 100%) !important;
+  box-shadow: 0 15px 36px rgba(10, 37, 61, .14) !important;
+}
+.admin-modern .hero::before { width: 4px !important; background: #e0b04a !important; }
+.admin-modern .hero h1 { font-size: clamp(27px, 3vw, 39px) !important; }
+.admin-modern .hero p { max-width: 680px !important; font-size: 12px !important; }
+
+/* Primary app navigation */
+.admin-modern .admin-pro-topbar {
+  top: 8px !important;
+  padding: 6px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 6px 18px rgba(20, 42, 63, .07) !important;
+}
+.admin-modern .admin-pro-main-nav button {
+  min-height: 44px !important;
+  border-radius: 8px !important;
+  padding: 9px 11px !important;
+  font-size: 11px !important;
+}
+.admin-modern .admin-pro-main-nav button.active {
+  background: #123f65 !important;
+  box-shadow: none !important;
+}
+.admin-modern .admin-pro-icon-action { min-height: 44px !important; }
+
+/* Home: denser information, more breathing space between groups */
+.admin-modern .admin-pro-home { gap: 14px !important; }
+.admin-modern .admin-pro-welcome { padding: 19px 20px !important; border-radius: 13px !important; box-shadow: none !important; }
+.admin-modern .admin-pro-stat-grid { gap: 9px !important; }
+.admin-modern .admin-pro-stat-card {
+  min-height: 82px;
+  border-radius: 11px !important;
+  padding: 13px !important;
+  box-shadow: none !important;
+}
+.admin-modern .admin-pro-stat-card strong { font-size: 20px !important; }
+.admin-modern .admin-pro-stat-card span:not(.admin-pro-stat-icon) { font-size: 9px !important; }
+
+/* Surfaces: avoid card-inside-card heaviness */
+.admin-modern .panel { box-shadow: 0 2px 10px rgba(24, 45, 66, .045) !important; }
+.admin-modern .panel-head { min-height: 62px !important; padding: 14px 16px !important; }
+.admin-modern .panel-body { padding: 16px !important; }
+.admin-modern .assessment-manager { background: #f8fafc !important; box-shadow: none !important; }
+
+/* Buttons: primary means primary. Secondary stays quiet. */
+.admin-modern .btn { min-height: 44px !important; border-radius: 9px !important; font-size: 11px !important; }
+.admin-modern .btn-primary { box-shadow: none !important; }
+.admin-modern .btn-secondary { background: #fff !important; }
+.admin-modern .btn-danger { background: #fff4f4 !important; }
+.admin-modern .btn-small { min-height: 36px !important; font-size: 10px !important; }
+
+/* Forms */
+.admin-modern .input,
+.admin-modern .select,
+.admin-modern .status-select,
+.admin-modern .score-input {
+  min-height: 44px !important;
+  border-radius: 9px !important;
+  font-size: 12px !important;
+}
+.admin-modern .field label { margin-bottom: 5px !important; font-size: 10px !important; }
+
+/* Tables: scannability */
+.admin-modern .table-wrap { border-radius: 10px !important; }
+.admin-modern .admin-table thead th { background: #edf3f7 !important; color: #40576c !important; }
+.admin-modern .admin-table tbody td { padding: 10px 9px !important; font-size: 11px !important; }
+.admin-modern .admin-table tbody tr:hover td { background: #f3f7fa !important; }
+
+/* Course sidebar */
+.admin-modern .course-sidebar { top: 78px !important; }
+.admin-modern .course-btn { min-height: 66px !important; border-radius: 9px !important; }
+.admin-modern .course-btn.active {
+  border-color: #9db8cb !important;
+  background: #eff6fa !important;
+  box-shadow: inset 3px 0 0 #123f65 !important;
+}
+
+/* Current course = clear context */
+.admin-modern .selected-course-head {
+  padding: 17px 18px !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+.admin-modern .selected-course-head::before { width: 4px !important; }
+
+/* Tabs stay visible but do not dominate */
+.admin-modern .admin-tabs {
+  top: 70px !important;
+  padding: 5px !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 12px rgba(24, 44, 66, .06) !important;
+}
+.admin-modern .admin-tabs .tab-btn { min-height: 40px !important; }
+
+/* Modal/search keyboard focus */
+.admin-modern .admin-pro-command-results button,
+.admin-modern .admin-pro-notification-list > button,
+.admin-modern .admin-pro-quick-grid button,
+.admin-modern .admin-pro-course-progress {
+  min-height: 44px;
+}
+
+/* Make destructive decisions visually distinct */
+.admin-modern .admin-pro-confirm-icon.danger { background: #fff0f0 !important; color: #b63535 !important; }
+.admin-modern .admin-pro-confirm-actions .btn-danger { background: #b63535 !important; border-color: #b63535 !important; color: #fff !important; }
+
+/* Academic feature pages */
+.admin-modern .academic-feature-panel { margin-bottom: 16px; }
+.admin-modern .academic-filter-grid { gap: 11px !important; }
+.admin-modern .academic-warning-card { min-height: 76px; }
+
+/* Mobile: preserve context, reduce horizontal hunting */
+@media (max-width: 820px) {
+  .admin-modern .shell { width: calc(100% - 16px) !important; }
+  .admin-modern .hero { padding: 18px 16px !important; }
+  .admin-modern .hero h1 { font-size: 28px !important; }
+  .admin-modern .admin-pro-topbar { top: 4px !important; }
+  .admin-modern .admin-pro-main-nav { scroll-snap-type: x proximity; }
+  .admin-modern .admin-pro-main-nav button { scroll-snap-align: start; }
+  .admin-modern .admin-tabs { top: 116px !important; }
+  .admin-modern .course-sidebar { margin-bottom: 12px !important; }
+  .admin-modern .course-btn { min-width: 220px !important; }
+  .admin-modern .panel-body { padding: 13px !important; }
+}
+
+@media (max-width: 520px) {
+  .admin-modern .admin-pro-stat-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .admin-modern .admin-pro-welcome-actions { flex-direction: column; }
+  .admin-modern .admin-pro-welcome-actions .btn { width: 100%; }
+  .admin-modern .admin-toolbar .admin-actions .btn { flex: 1 1 46%; }
+}
