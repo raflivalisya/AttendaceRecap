@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -8,6 +8,8 @@ import { STATUS_LABELS, formatLongDate } from "@/lib/attendance";
 import type { Attendance, AttendanceStatus, Course, Meeting, Student } from "@/lib/types";
 import type { AssistantActivityLog, AssistantProfile, AssistantScheduleTemplate, ParsedAssistantSchedule, CourseScheduleSlot } from "@/lib/asdos/types";
 import AttendanceQR from "@/components/admin/AttendanceQR";
+import AttendanceLiveMonitor from "@/components/admin/AttendanceLiveMonitor";
+import SaveStateBadge, { type SaveState } from "@/components/ui/SaveStateBadge";
 
 type Tab = "dashboard" | "attendance" | "schedule" | "recap" | "import";
 type StatusValue = AttendanceStatus | "";
@@ -75,11 +77,19 @@ export default function AsdosDashboard(props: Props) {
   const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id ?? "");
   const [selectedMeetingId, setSelectedMeetingId] = useState("");
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, StatusValue>>({});
+  const [attendanceSaveState, setAttendanceSaveState] = useState<SaveState>("saved");
+  const attendanceDirtyIdsRef = useRef(new Set<string>());
+  const attendanceRevisionRef = useRef(0);
   const [month, setMonth] = useState(currentMonth());
   const initialPeriod = periodForMonth(currentMonth());
   const [periodStart, setPeriodStart] = useState(initialPeriod.start);
   const [periodEnd, setPeriodEnd] = useState(initialPeriod.end);
   const [periodStorageReady, setPeriodStorageReady] = useState(false);
+  const [periodSaveState, setPeriodSaveState] = useState<SaveState>("saving");
+  const [recapSaveState, setRecapSaveState] = useState<SaveState>("saved");
+  const recapDirtyIdsRef = useRef(new Set<string>());
+  const recapRevisionRef = useRef(0);
+  const [liveParticipantCount, setLiveParticipantCount] = useState(0);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -91,67 +101,109 @@ export default function AsdosDashboard(props: Props) {
   const [newStudentName, setNewStudentName] = useState("");
 
   /*
-   * Simpan periode rekap terakhir per akun Asdos.
-   * Sebelumnya periodStart/periodEnd hanya React state sehingga
-   * selalu kembali ke periode default setelah refresh halaman.
+   * Periode rekap disimpan di database agar mengikuti akun Asdos lintas perangkat.
+   * localStorage hanya fallback jika migration user_preferences belum tersedia / offline.
    */
   useEffect(() => {
+    let cancelled = false;
     const storageKey = `asdos-recap-period:${props.profile.user_id}`;
 
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-
-      if (raw) {
-        const saved = JSON.parse(raw) as {
-          month?: unknown;
-          start?: unknown;
-          end?: unknown;
-        };
+    async function restorePeriod() {
+      setPeriodSaveState("saving");
+      try {
+        const response = await fetch("/api/asdos/preferences", { cache: "no-store" });
+        const result = await response.json().catch(() => ({}));
+        const saved = result?.preference as { month?: unknown; start?: unknown; end?: unknown } | null;
 
         if (
+          response.ok &&
+          saved &&
           isMonthValue(saved.month) &&
           isDateValue(saved.start) &&
           isDateValue(saved.end) &&
           saved.start <= saved.end
         ) {
-          setMonth(saved.month);
-          setPeriodStart(saved.start);
-          setPeriodEnd(saved.end);
+          if (!cancelled) {
+            setMonth(saved.month);
+            setPeriodStart(saved.start);
+            setPeriodEnd(saved.end);
+            setPeriodSaveState("saved");
+            setPeriodStorageReady(true);
+          }
+          try { window.localStorage.setItem(storageKey, JSON.stringify(saved)); } catch {}
+          return;
+        }
+      } catch {
+        // Fallback lokal dipakai di bawah.
+      }
+
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (raw) {
+          const saved = JSON.parse(raw) as { month?: unknown; start?: unknown; end?: unknown };
+          if (
+            isMonthValue(saved.month) &&
+            isDateValue(saved.start) &&
+            isDateValue(saved.end) &&
+            saved.start <= saved.end &&
+            !cancelled
+          ) {
+            setMonth(saved.month);
+            setPeriodStart(saved.start);
+            setPeriodEnd(saved.end);
+          }
+        }
+      } catch (error) {
+        console.warn("Gagal memulihkan periode rekap Asdos:", error);
+      } finally {
+        if (!cancelled) {
+          setPeriodStorageReady(true);
+          setPeriodSaveState("saved");
         }
       }
-    } catch (error) {
-      console.warn("Gagal memulihkan periode rekap Asdos:", error);
-    } finally {
-      setPeriodStorageReady(true);
     }
+
+    void restorePeriod();
+    return () => { cancelled = true; };
   }, [props.profile.user_id]);
+
+  async function persistPeriodPreference(silent = true) {
+    if (!periodStorageReady) return false;
+    if (!isMonthValue(month) || !isDateValue(periodStart) || !isDateValue(periodEnd) || periodStart > periodEnd) return false;
+
+    const storageKey = `asdos-recap-period:${props.profile.user_id}`;
+    const payload = { month, start: periodStart, end: periodEnd };
+    setPeriodSaveState("saving");
+
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch {}
+
+    try {
+      const response = await fetch("/api/asdos/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Gagal menyimpan periode.");
+      setPeriodSaveState("saved");
+      return true;
+    } catch (error) {
+      console.warn("Sinkronisasi periode lintas perangkat gagal:", error);
+      setPeriodSaveState("error");
+      if (!silent) notify(error instanceof Error ? error.message : "Gagal menyimpan periode lintas perangkat.");
+      return false;
+    }
+  }
 
   useEffect(() => {
     if (!periodStorageReady) return;
-    if (!isMonthValue(month) || !isDateValue(periodStart) || !isDateValue(periodEnd)) return;
-    if (periodStart > periodEnd) return;
-
-    const storageKey = `asdos-recap-period:${props.profile.user_id}`;
-
-    try {
-      window.localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          month,
-          start: periodStart,
-          end: periodEnd,
-        }),
-      );
-    } catch (error) {
-      console.warn("Gagal menyimpan periode rekap Asdos:", error);
-    }
-  }, [
-    month,
-    periodStart,
-    periodEnd,
-    periodStorageReady,
-    props.profile.user_id,
-  ]);
+    if (!isMonthValue(month) || !isDateValue(periodStart) || !isDateValue(periodEnd) || periodStart > periodEnd) return;
+    setPeriodSaveState("unsaved");
+    const timer = window.setTimeout(() => { void persistPeriodPreference(true); }, 700);
+    return () => window.clearTimeout(timer);
+  }, [month, periodStart, periodEnd, periodStorageReady]);
 
   const selectedCourse = courses.find((course) => course.id === selectedCourseId);
   const courseStudents = students.filter((student) => student.course_id === selectedCourseId);
@@ -167,11 +219,21 @@ export default function AsdosDashboard(props: Props) {
   }, [selectedCourseId]);
 
   useEffect(() => {
-    const map: Record<string, StatusValue> = {};
-    courseStudents.forEach((student) => {
-      map[student.id] = attendance.find((item) => item.meeting_id === selectedMeetingId && item.student_id === student.id)?.status ?? "";
+    setLiveParticipantCount(0);
+    attendanceDirtyIdsRef.current.clear();
+    setAttendanceSaveState("saved");
+  }, [selectedMeetingId]);
+
+  useEffect(() => {
+    setAttendanceDraft((current) => {
+      const map: Record<string, StatusValue> = {};
+      courseStudents.forEach((student) => {
+        map[student.id] = attendanceDirtyIdsRef.current.has(student.id)
+          ? (current[student.id] ?? "")
+          : (attendance.find((item) => item.meeting_id === selectedMeetingId && item.student_id === student.id)?.status ?? "");
+      });
+      return map;
     });
-    setAttendanceDraft(map);
   }, [selectedMeetingId, attendance, selectedCourseId]);
 
   const periodLogs = useMemo(() => logs
@@ -338,25 +400,97 @@ export default function AsdosDashboard(props: Props) {
     setSaving(false);
   }
 
-  async function saveAttendance() {
-    if (!selectedMeetingId) return;
-    setSaving(true);
-    const filled = courseStudents.filter((student) => attendanceDraft[student.id]).map((student) => ({ meeting_id: selectedMeetingId, student_id: student.id, status: attendanceDraft[student.id] as AttendanceStatus }));
-    const blankIds = courseStudents.filter((student) => !attendanceDraft[student.id]).map((student) => attendance.find((item) => item.meeting_id === selectedMeetingId && item.student_id === student.id)?.id).filter(Boolean) as string[];
+  function updateAttendanceDraft(studentId: string, status: StatusValue) {
+    attendanceDirtyIdsRef.current.add(studentId);
+    attendanceRevisionRef.current += 1;
+    setAttendanceSaveState("unsaved");
+    setAttendanceDraft((current) => ({ ...current, [studentId]: status }));
+  }
 
-    if (filled.length) {
-      const { error } = await supabase.from("attendance").upsert(filled, { onConflict: "meeting_id,student_id" });
-      if (error) { notify(`Gagal menyimpan absensi: ${error.message}`); setSaving(false); return; }
+  async function persistAttendance(silent = true) {
+    if (!selectedMeetingId || !attendanceDirtyIdsRef.current.size) {
+      setAttendanceSaveState("saved");
+      return true;
     }
-    if (blankIds.length) {
-      const { error } = await supabase.from("attendance").delete().in("id", blankIds);
-      if (error) { notify(`Gagal mengosongkan absensi: ${error.message}`); setSaving(false); return; }
+
+    const revision = attendanceRevisionRef.current;
+    const dirtyIds = [...attendanceDirtyIdsRef.current];
+    setAttendanceSaveState("saving");
+    if (!silent) setSaving(true);
+
+    const filled = courseStudents
+      .filter((student) => attendanceDraft[student.id])
+      .map((student) => ({ meeting_id: selectedMeetingId, student_id: student.id, status: attendanceDraft[student.id] as AttendanceStatus }));
+    const blankIds = courseStudents
+      .filter((student) => !attendanceDraft[student.id])
+      .map((student) => attendance.find((item) => item.meeting_id === selectedMeetingId && item.student_id === student.id)?.id)
+      .filter(Boolean) as string[];
+
+    try {
+      if (filled.length) {
+        const { error } = await supabase.from("attendance").upsert(filled, { onConflict: "meeting_id,student_id" });
+        if (error) throw error;
+      }
+      if (blankIds.length) {
+        const { error } = await supabase.from("attendance").delete().in("id", blankIds);
+        if (error) throw error;
+      }
+      const { data, error } = await supabase.from("attendance").select("*").eq("meeting_id", selectedMeetingId);
+      if (error) throw error;
+      setAttendance((items) => [
+        ...items.filter((item) => item.meeting_id !== selectedMeetingId),
+        ...((data ?? []) as Attendance[]),
+      ]);
+
+      if (revision === attendanceRevisionRef.current) {
+        dirtyIds.forEach((id) => attendanceDirtyIdsRef.current.delete(id));
+        setAttendanceSaveState(attendanceDirtyIdsRef.current.size ? "unsaved" : "saved");
+      } else {
+        setAttendanceSaveState("unsaved");
+      }
+      if (!silent) notify("Absensi mahasiswa berhasil disimpan.");
+      return true;
+    } catch (error) {
+      setAttendanceSaveState("error");
+      if (!silent) notify(`Gagal menyimpan absensi: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return false;
+    } finally {
+      if (!silent) setSaving(false);
     }
-    const { data, error } = await supabase.from("attendance").select("*");
-    if (error) { notify(`Absensi tersimpan, tetapi refresh gagal: ${error.message}`); setSaving(false); return; }
-    setAttendance((data ?? []) as Attendance[]);
-    notify("Absensi mahasiswa berhasil disimpan.");
-    setSaving(false);
+  }
+
+  async function saveAttendance() {
+    await persistAttendance(false);
+  }
+
+  useEffect(() => {
+    if (!selectedMeetingId || !attendanceDirtyIdsRef.current.size) return;
+    const timer = window.setTimeout(() => { void persistAttendance(true); }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [attendanceDraft, selectedMeetingId]);
+
+  async function changeSelectedCourse(nextCourseId: string) {
+    if (nextCourseId === selectedCourseId) return;
+    if (attendanceDirtyIdsRef.current.size) {
+      const saved = await persistAttendance(true);
+      if (!saved) {
+        notify("Perubahan presensi belum berhasil disimpan. Tetap di kelas ini agar perubahan tidak hilang.");
+        return;
+      }
+    }
+    setSelectedCourseId(nextCourseId);
+  }
+
+  async function changeSelectedMeeting(nextMeetingId: string) {
+    if (nextMeetingId === selectedMeetingId) return;
+    if (attendanceDirtyIdsRef.current.size) {
+      const saved = await persistAttendance(true);
+      if (!saved) {
+        notify("Perubahan presensi belum berhasil disimpan. Tetap di pertemuan ini agar perubahan tidak hilang.");
+        return;
+      }
+    }
+    setSelectedMeetingId(nextMeetingId);
   }
 
   async function previewExcel() {
@@ -560,18 +694,7 @@ export default function AsdosDashboard(props: Props) {
     if (!periodStart || !periodEnd) { notify("Tanggal mulai dan tanggal akhir wajib diisi."); return; }
     if (periodStart > periodEnd) { notify("Tanggal mulai tidak boleh lebih besar dari tanggal akhir."); return; }
 
-    try {
-      window.localStorage.setItem(
-        `asdos-recap-period:${props.profile.user_id}`,
-        JSON.stringify({
-          month,
-          start: periodStart,
-          end: periodEnd,
-        }),
-      );
-    } catch {
-      // Generate tetap berjalan walau browser memblokir localStorage.
-    }
+    await persistPeriodPreference(true);
 
     setSaving(true);
     const response = await fetch("/api/asdos/generate-month", {
@@ -587,23 +710,80 @@ export default function AsdosDashboard(props: Props) {
     setTab("recap");
   }
 
-  async function saveLog(log: AssistantActivityLog) {
-    const { error } = await supabase.from("assistant_activity_logs").update({
-      room: log.room,
-      material: log.material,
-      activity_type: log.activity_type,
-      notes: log.notes,
-      status: log.status,
-    }).eq("id", log.id);
-    if (error) { notify(`Gagal menyimpan rekap: ${error.message}`); return; }
-    notify("Rekap kegiatan diperbarui.");
+  function updateLogDraft(id: string, patch: Partial<AssistantActivityLog>) {
+    recapDirtyIdsRef.current.add(id);
+    recapRevisionRef.current += 1;
+    setRecapSaveState("unsaved");
+    setLogs((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   }
+
+  async function persistDirtyLogs(silent = true) {
+    const ids = [...recapDirtyIdsRef.current];
+    if (!ids.length) {
+      setRecapSaveState("saved");
+      return true;
+    }
+
+    const revision = recapRevisionRef.current;
+    const rows = logs.filter((item) => ids.includes(item.id));
+    setRecapSaveState("saving");
+
+    try {
+      const results = await Promise.all(rows.map((log) =>
+        supabase.from("assistant_activity_logs").update({
+          room: log.room,
+          material: log.material,
+          activity_type: log.activity_type,
+          notes: log.notes,
+          status: log.status,
+        }).eq("id", log.id)
+      ));
+      const failed = results.find((result) => result.error);
+      if (failed?.error) throw failed.error;
+
+      if (revision === recapRevisionRef.current) {
+        ids.forEach((id) => recapDirtyIdsRef.current.delete(id));
+        setRecapSaveState(recapDirtyIdsRef.current.size ? "unsaved" : "saved");
+      } else {
+        setRecapSaveState("unsaved");
+      }
+      if (!silent) notify("Rekap kegiatan diperbarui.");
+      return true;
+    } catch (error) {
+      setRecapSaveState("error");
+      if (!silent) notify(`Gagal menyimpan rekap: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return false;
+    }
+  }
+
+  async function saveLog(log: AssistantActivityLog) {
+    if (!recapDirtyIdsRef.current.has(log.id)) recapDirtyIdsRef.current.add(log.id);
+    await persistDirtyLogs(false);
+  }
+
+  useEffect(() => {
+    if (!recapDirtyIdsRef.current.size) return;
+    const timer = window.setTimeout(() => { void persistDirtyLogs(true); }, 1400);
+    return () => window.clearTimeout(timer);
+  }, [logs]);
+
+  useEffect(() => {
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      if (!recapDirtyIdsRef.current.size && !attendanceDirtyIdsRef.current.size && periodSaveState !== "unsaved" && periodSaveState !== "saving") return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, [periodSaveState]);
 
   async function deleteLog(id: string) {
     if (!window.confirm("Hapus kegiatan ini dari rekap Asdos?")) return;
     const { error } = await supabase.from("assistant_activity_logs").delete().eq("id", id);
     if (error) { notify(`Gagal menghapus: ${error.message}`); return; }
+    recapDirtyIdsRef.current.delete(id);
     setLogs((items) => items.filter((item) => item.id !== id));
+    setRecapSaveState(recapDirtyIdsRef.current.size ? "unsaved" : "saved");
     notify("Kegiatan dihapus.");
   }
 
@@ -667,7 +847,7 @@ export default function AsdosDashboard(props: Props) {
           <section className="panel" style={{ marginTop: 18 }}>
             <div className="panel-head"><div><h2>Mata Kuliah Saya</h2><p>Hanya mata kuliah yang ditugaskan oleh dosen/Super Admin.</p></div></div>
             <div className="panel-body" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
-              {courses.map((course) => <button key={course.id} className="course-btn" onClick={() => { setSelectedCourseId(course.id); setTab("attendance"); }}><strong>{course.name}</strong><span>{course.class_name} · {course.lecturer}</span></button>)}
+              {courses.map((course) => <button key={course.id} className="course-btn" onClick={() => { void changeSelectedCourse(course.id); setTab("attendance"); }}><strong>{course.name}</strong><span>{course.class_name} · {course.lecturer}</span></button>)}
               {courses.length === 0 && <div className="empty-state">Belum ada mata kuliah yang ditugaskan ke akun Asdos ini.</div>}
             </div>
           </section>
@@ -703,8 +883,8 @@ export default function AsdosDashboard(props: Props) {
               </div>
             </div>
             <div className="form-grid-3" style={{ marginBottom: 16 }}>
-              <div className="field"><label>Mata Kuliah</label><select className="select" value={selectedCourseId} onChange={(e) => setSelectedCourseId(e.target.value)}><option value="">— Pilih Mata Kuliah —</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.name} — {course.class_name}</option>)}</select></div>
-              <div className="field"><label>Pertemuan</label><select className="select" value={selectedMeetingId} onChange={(e) => setSelectedMeetingId(e.target.value)}><option value="">— Pilih Pertemuan —</option>{courseMeetings.map((meeting) => <option key={meeting.id} value={meeting.id}>P{meeting.meeting_no} — {meeting.meeting_date}</option>)}</select></div>
+              <div className="field"><label>Mata Kuliah</label><select className="select" value={selectedCourseId} onChange={(e) => void changeSelectedCourse(e.target.value)}><option value="">— Pilih Mata Kuliah —</option>{courses.map((course) => <option key={course.id} value={course.id}>{course.name} — {course.class_name}</option>)}</select></div>
+              <div className="field"><label>Pertemuan</label><select className="select" value={selectedMeetingId} onChange={(e) => void changeSelectedMeeting(e.target.value)}><option value="">— Pilih Pertemuan —</option>{courseMeetings.map((meeting) => <option key={meeting.id} value={meeting.id}>P{meeting.meeting_no} — {meeting.meeting_date}</option>)}</select></div>
               <div className="field"><label>Status</label><div className="muted">{selectedMeeting ? formatLongDate(selectedMeeting.meeting_date) : "Pilih pertemuan"}</div></div>
             </div>
 
@@ -731,7 +911,22 @@ export default function AsdosDashboard(props: Props) {
               </div>
             )}
 
-            {selectedMeeting && selectedCourse && <div style={{ marginBottom: 18 }}><AttendanceQR meetingId={selectedMeeting.id} meetingNo={selectedMeeting.meeting_no} courseName={selectedCourse.name} classLabel={selectedCourse.class_name} /></div>}
+            {selectedMeeting && selectedCourse && (
+              <div className="attendance-live-grid" style={{ marginBottom: 18 }}>
+                <AttendanceQR meetingId={selectedMeeting.id} meetingNo={selectedMeeting.meeting_no} courseName={selectedCourse.name} classLabel={selectedCourse.class_name} participantCount={liveParticipantCount} />
+                <AttendanceLiveMonitor
+                  meetingId={selectedMeeting.id}
+                  students={courseStudents}
+                  onParticipantCount={setLiveParticipantCount}
+                  onAttendanceChange={(rows) => {
+                    setAttendance((items) => [
+                      ...items.filter((item) => item.meeting_id !== selectedMeeting.id),
+                      ...rows,
+                    ]);
+                  }}
+                />
+              </div>
+            )}
 
             {selectedCourse && (
               <div className="assessment-manager" style={{ marginBottom: 16 }}>
@@ -754,12 +949,25 @@ export default function AsdosDashboard(props: Props) {
             )}
 
             <div className="admin-actions" style={{ marginBottom: 12 }}>
-              <button className="btn btn-success" onClick={() => { const next: Record<string, StatusValue> = {}; courseStudents.forEach((student) => next[student.id] = "H"); setAttendanceDraft(next); }}>Semua Hadir</button>
-              <button className="btn btn-secondary" onClick={() => { const next: Record<string, StatusValue> = {}; courseStudents.forEach((student) => next[student.id] = ""); setAttendanceDraft(next); }}>Kosongkan</button>
-              <button className="btn btn-primary" disabled={saving || !selectedMeetingId} onClick={saveAttendance}>{saving ? "Menyimpan..." : "Simpan Absensi"}</button>
+              <SaveStateBadge state={attendanceSaveState} />
+              <button className="btn btn-success" onClick={() => {
+                const next: Record<string, StatusValue> = {};
+                courseStudents.forEach((student) => { next[student.id] = "H"; attendanceDirtyIdsRef.current.add(student.id); });
+                attendanceRevisionRef.current += 1;
+                setAttendanceSaveState("unsaved");
+                setAttendanceDraft(next);
+              }}>Semua Hadir</button>
+              <button className="btn btn-secondary" onClick={() => {
+                const next: Record<string, StatusValue> = {};
+                courseStudents.forEach((student) => { next[student.id] = ""; attendanceDirtyIdsRef.current.add(student.id); });
+                attendanceRevisionRef.current += 1;
+                setAttendanceSaveState("unsaved");
+                setAttendanceDraft(next);
+              }}>Kosongkan</button>
+              <button className="btn btn-primary" disabled={saving || !selectedMeetingId} onClick={() => void saveAttendance()}>{saving ? "Menyimpan..." : "Simpan Sekarang"}</button>
             </div>
 
-            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th><th>Aksi</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><button type="button" className="btn btn-secondary btn-small" disabled={saving} onClick={() => void renameStudent(student)}>Ubah Nama</button></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} onChange={(e) => setAttendanceDraft((current) => ({ ...current, [student.id]: e.target.value as StatusValue }))}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((status) => <option key={status} value={status}>{status} — {STATUS_LABELS[status]}</option>)}</select></td></tr>)}</tbody></table></div>
+            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th><th>Aksi</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><button type="button" className="btn btn-secondary btn-small" disabled={saving} onClick={() => void renameStudent(student)}>Ubah Nama</button></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} onChange={(e) => updateAttendanceDraft(student.id, e.target.value as StatusValue)}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((status) => <option key={status} value={status}>{status} — {STATUS_LABELS[status]}</option>)}</select></td></tr>)}</tbody></table></div>
           </div>
         </section>}
 
@@ -804,7 +1012,7 @@ export default function AsdosDashboard(props: Props) {
         {tab === "recap" && <section className="panel">
           <div className="panel-head">
             <div><h2>Rekap Kehadiran Asdos</h2><p>Rekap dibuat dari seluruh jadwal Excel pribadi Asdos pada rentang tanggal yang dipilih. Tidak membutuhkan Link DB.</p></div>
-            <div className="admin-actions"><Link className="btn btn-primary" href={`/asdos/print?month=${month}&start=${periodStart}&end=${periodEnd}`} target="_blank">🖨 Print Rekap</Link></div>
+            <div className="admin-actions"><SaveStateBadge state={recapSaveState} /><Link className="btn btn-primary" href={`/asdos/print?month=${month}&start=${periodStart}&end=${periodEnd}`} target="_blank">🖨 Print Rekap</Link></div>
           </div>
           <div className="panel-body">
             <div className="assessment-manager" style={{ marginBottom: 18 }}>
@@ -816,6 +1024,7 @@ export default function AsdosDashboard(props: Props) {
               </div>
               <div className="save-row" style={{ marginTop: 12 }}>
                 <span><strong>{periodLabel(periodStart, periodEnd)}</strong></span>
+                <SaveStateBadge state={periodSaveState} />
                 <button className="btn btn-secondary" onClick={generateMonth} disabled={saving}>{saving ? "Membuat..." : "Generate / Refresh dari Jadwal"}</button>
               </div>
             </div>
@@ -835,7 +1044,7 @@ export default function AsdosDashboard(props: Props) {
             </div>
 
             <div style={{ marginBottom: 12 }}><strong>{monthLabel(month)}</strong> · {periodLabel(periodStart, periodEnd)} · {periodLogs.length} kegiatan · {(totalMinutes / 60).toFixed(totalMinutes % 60 ? 1 : 0)} jam</div>
-            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>Tanggal/Jam</th><th>Kelas & MK</th><th>Ruang</th><th>Materi</th><th>Kegiatan</th><th>Keterangan</th><th>Aksi</th></tr></thead><tbody>{periodLogs.map((log, index) => <tr key={log.id}><td>{index + 1}</td><td>{log.activity_date}<br/><small>{log.start_time.slice(0,5)}–{log.end_time.slice(0,5)}</small></td><td><strong>{log.course_name}</strong><br/><small>{log.class_label} · {log.lecturer_name}</small></td><td><input className="input" style={{ minWidth: 110 }} value={log.room} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, room: e.target.value } : item))} /></td><td><input className="input" style={{ minWidth: 150 }} value={log.material} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, material: e.target.value } : item))} /></td><td><select className="select" value={log.activity_type} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, activity_type: e.target.value } : item))}><option>Mengajar</option><option>Mendampingi Praktikum</option><option>Menggantikan Dosen</option><option>Asistensi</option><option>Pengawasan</option><option>Lainnya</option></select></td><td><input className="input" style={{ minWidth: 140 }} value={log.notes} onChange={(e) => setLogs((items) => items.map((item) => item.id === log.id ? { ...item, notes: e.target.value } : item))} /></td><td><div className="admin-actions"><button className="btn btn-secondary btn-small" onClick={() => saveLog(log)}>Simpan</button><button className="btn btn-danger btn-small" onClick={() => deleteLog(log.id)}>Hapus</button></div></td></tr>)}</tbody></table>{periodLogs.length === 0 && <div className="empty-state">Belum ada kegiatan pada periode ini. Generate dari Jadwal Asistensi atau tambah manual.</div>}</div>
+            <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>Tanggal/Jam</th><th>Kelas & MK</th><th>Ruang</th><th>Materi</th><th>Kegiatan</th><th>Keterangan</th><th>Aksi</th></tr></thead><tbody>{periodLogs.map((log, index) => <tr key={log.id}><td>{index + 1}</td><td>{log.activity_date}<br/><small>{log.start_time.slice(0,5)}–{log.end_time.slice(0,5)}</small></td><td><strong>{log.course_name}</strong><br/><small>{log.class_label} · {log.lecturer_name}</small></td><td><input className="input" style={{ minWidth: 110 }} value={log.room} onChange={(e) => updateLogDraft(log.id, { room: e.target.value })} /></td><td><input className="input" style={{ minWidth: 150 }} value={log.material} onChange={(e) => updateLogDraft(log.id, { material: e.target.value })} /></td><td><select className="select" value={log.activity_type} onChange={(e) => updateLogDraft(log.id, { activity_type: e.target.value })}><option>Mengajar</option><option>Mendampingi Praktikum</option><option>Menggantikan Dosen</option><option>Asistensi</option><option>Pengawasan</option><option>Lainnya</option></select></td><td><input className="input" style={{ minWidth: 140 }} value={log.notes} onChange={(e) => updateLogDraft(log.id, { notes: e.target.value })} /></td><td><div className="admin-actions"><button className="btn btn-secondary btn-small" onClick={() => saveLog(log)}>Simpan</button><button className="btn btn-danger btn-small" onClick={() => deleteLog(log.id)}>Hapus</button></div></td></tr>)}</tbody></table>{periodLogs.length === 0 && <div className="empty-state">Belum ada kegiatan pada periode ini. Generate dari Jadwal Asistensi atau tambah manual.</div>}</div>
           </div>
         </section>}
 

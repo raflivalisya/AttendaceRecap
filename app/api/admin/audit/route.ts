@@ -37,9 +37,10 @@ export async function GET(request: NextRequest) {
       .select("course_id")
       .eq("user_id", user.id);
 
-    allowedCourseIds = (memberships ?? []).map((item) => item.course_id);
+    const membershipCourseIds = (memberships ?? []).map((item) => String(item.course_id));
+    allowedCourseIds = membershipCourseIds;
 
-    if (!allowedCourseIds.length) {
+    if (!membershipCourseIds.length) {
       return NextResponse.json({ logs: [] });
     }
   }

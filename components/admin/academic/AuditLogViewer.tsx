@@ -17,7 +17,7 @@ type AuditLog = {
   created_at: string;
 };
 
-type Props = { courses: Course[] };
+type Props = { courses: Course[]; canRecover?: boolean };
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("id-ID", {
@@ -35,10 +35,11 @@ function actionLabel(action: string) {
   if (action === "DELETE") return "Hapus";
   if (action === "ARCHIVE") return "Arsip";
   if (action === "AUTH") return "Akun";
+  if (action === "RECOVER") return "Pulihkan";
   return action;
 }
 
-export default function AuditLogViewer({ courses }: Props) {
+export default function AuditLogViewer({ courses, canRecover = false }: Props) {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [courseId, setCourseId] = useState("");
@@ -46,6 +47,8 @@ export default function AuditLogViewer({ courses }: Props) {
   const [action, setAction] = useState("");
   const [expanded, setExpanded] = useState("");
   const [error, setError] = useState("");
+  const [recoveringId, setRecoveringId] = useState("");
+  const [success, setSuccess] = useState("");
 
   async function load() {
     setLoading(true);
@@ -74,6 +77,38 @@ export default function AuditLogViewer({ courses }: Props) {
   useEffect(() => {
     void load();
   }, [courseId, entity, action]);
+
+  async function recover(log: AuditLog) {
+    if (!canRecover || recoveringId) return;
+    const label = log.summary || `${actionLabel(log.action)} ${log.entity_table}`;
+    if (!window.confirm(`Pulihkan perubahan ini?\n\n${label}\n\nSistem akan membuat audit log baru untuk tindakan recovery.`)) return;
+
+    setRecoveringId(log.id);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetch("/api/admin/audit/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audit_id: log.id }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Pemulihan gagal.");
+      setSuccess(result.message || "Perubahan berhasil dipulihkan.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Pemulihan gagal.");
+    } finally {
+      setRecoveringId("");
+    }
+  }
+
+  function canRecoverLog(log: AuditLog) {
+    if (!canRecover || !["INSERT", "UPDATE", "DELETE"].includes(log.action)) return false;
+    if (!["courses", "students", "meetings", "attendance", "assessments", "grades", "course_schedules"].includes(log.entity_table)) return false;
+    if (log.action === "INSERT") return Boolean(log.entity_id || log.new_data?.id);
+    return Boolean(log.old_data);
+  }
 
   const courseMap = useMemo(
     () => new Map(courses.map((course) => [course.id, course])),
@@ -131,11 +166,13 @@ export default function AuditLogViewer({ courses }: Props) {
               <option value="DELETE">Hapus</option>
               <option value="ARCHIVE">Arsip</option>
               <option value="AUTH">Akun</option>
+              <option value="RECOVER">Pulihkan</option>
             </select>
           </div>
         </div>
 
         {error && <div className="error" style={{ marginTop: 14 }}>{error}</div>}
+        {success && <div className="success" style={{ marginTop: 14 }}>{success}</div>}
 
         <div className="academic-audit-list" style={{ marginTop: 16 }}>
           {loading ? (
@@ -169,16 +206,26 @@ export default function AuditLogViewer({ courses }: Props) {
                   </button>
 
                   {isOpen && (
-                    <div className="academic-audit-detail">
-                      <div>
-                        <strong>Data Sebelum</strong>
-                        <pre>{JSON.stringify(log.old_data, null, 2) || "—"}</pre>
+                    <>
+                      <div className="academic-audit-detail">
+                        <div>
+                          <strong>Data Sebelum</strong>
+                          <pre>{JSON.stringify(log.old_data, null, 2) || "—"}</pre>
+                        </div>
+                        <div>
+                          <strong>Data Sesudah</strong>
+                          <pre>{JSON.stringify(log.new_data, null, 2) || "—"}</pre>
+                        </div>
                       </div>
-                      <div>
-                        <strong>Data Sesudah</strong>
-                        <pre>{JSON.stringify(log.new_data, null, 2) || "—"}</pre>
-                      </div>
-                    </div>
+                      {canRecoverLog(log) && (
+                        <div className="academic-audit-recovery">
+                          <span className="muted">Recovery mengembalikan snapshot sebelumnya dan tetap tercatat di audit log.</span>
+                          <button type="button" className="btn btn-warning" disabled={recoveringId === log.id} onClick={() => void recover(log)}>
+                            {recoveringId === log.id ? "Memulihkan…" : "↶ Pulihkan perubahan"}
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </article>
               );

@@ -33,6 +33,8 @@ import AdminGlobalSearch from "@/components/admin/pro/AdminGlobalSearch";
 import AdminNotificationCenter from "@/components/admin/pro/AdminNotificationCenter";
 import AdminToast from "@/components/admin/pro/AdminToast";
 import { useAdminConfirm } from "@/components/admin/pro/useAdminConfirm";
+import SaveStateBadge, { type SaveState } from "@/components/ui/SaveStateBadge";
+import SystemControlCenter from "@/components/admin/system/SystemControlCenter";
 import SemesterArchiveManager from "@/components/admin/academic/SemesterArchiveManager";
 import AuditLogViewer from "@/components/admin/academic/AuditLogViewer";
 import StudentAccountManager from "@/components/admin/academic/StudentAccountManager";
@@ -83,7 +85,8 @@ type AdminView =
   | "archive"
   | "student_accounts"
   | "lecturers"
-  | "assistants";
+  | "assistants"
+  | "system";
 
 type StatusValue = AttendanceStatus | "";
 
@@ -364,10 +367,25 @@ const canManageSelectedGrades =
   });
 
   const attendanceDirtyRef = useRef<Set<string>>(new Set());
+  const attendanceRevisionRef = useRef(0);
+  const gradeDirtyRef = useRef<Set<string>>(new Set());
+  const gradeRevisionRef = useRef(0);
+  const [attendanceSaveState, setAttendanceSaveState] = useState<SaveState>("saved");
+  const [gradeSaveState, setGradeSaveState] = useState<SaveState>("saved");
+  const [liveParticipantCount, setLiveParticipantCount] = useState(0);
 
   useEffect(() => {
     attendanceDirtyRef.current.clear();
+    attendanceRevisionRef.current += 1;
+    setAttendanceSaveState("saved");
+    setLiveParticipantCount(0);
   }, [selectedMeetingId, selectedCourseId]);
+
+  useEffect(() => {
+    gradeDirtyRef.current.clear();
+    gradeRevisionRef.current += 1;
+    setGradeSaveState("saved");
+  }, [selectedCourseId]);
 
   const [gradeDraft, setGradeDraft] = useState<Record<string, string>>(() => {
 
@@ -512,7 +530,34 @@ const canManageSelectedGrades =
 
   const totalWeight = courseAssessments.reduce((sum, item) => sum + Number(item.weight), 0);
 
+  useEffect(() => {
+    if (!canManageSelectedAttendance || !selectedMeetingId || attendanceDirtyRef.current.size === 0) return;
+    setAttendanceSaveState("unsaved");
+    const timer = window.setTimeout(() => {
+      void persistAttendance(true);
+    }, 1400);
+    return () => window.clearTimeout(timer);
+  }, [attendanceDraft, selectedMeetingId, canManageSelectedAttendance]);
 
+  useEffect(() => {
+    if (!canManageSelectedGrades || gradeDirtyRef.current.size === 0) return;
+    setGradeSaveState("unsaved");
+    const timer = window.setTimeout(() => {
+      void persistGrades(true);
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [gradeDraft, selectedCourseId, canManageSelectedGrades]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      const pending = attendanceDirtyRef.current.size > 0 || gradeDirtyRef.current.size > 0;
+      if (!pending) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   function notify(text: string) {
     const lower = text.toLowerCase();
@@ -534,17 +579,25 @@ const canManageSelectedGrades =
   }
 
   function openCourseWorkspace(courseId: string, nextTab: Tab = "attendance") {
-    chooseCourse(courseId);
+    void chooseCourse(courseId);
     setTab(nextTab);
     setAdminView("workspace");
   }
 
 
 
-  function chooseCourse(courseId: string) {
+  async function chooseCourse(courseId: string) {
 
     const nextCourse = visibleCourses.find((item) => item.id === courseId);
     if (!nextCourse) return;
+    if (courseId !== selectedCourseId && attendanceDirtyRef.current.size) {
+      const saved = await persistAttendance(true);
+      if (!saved) { notify("Perubahan absensi belum dapat disimpan. Tetap di kelas ini agar perubahan tidak hilang."); return; }
+    }
+    if (courseId !== selectedCourseId && gradeDirtyRef.current.size) {
+      const saved = await persistGrades(true);
+      if (!saved) { notify("Perubahan nilai belum dapat disimpan. Tetap di kelas ini agar perubahan tidak hilang."); return; }
+    }
 
     const nextMeetings = meetings.filter((item) => item.course_id === courseId).sort((a, b) => a.meeting_no - b.meeting_no);
 
@@ -560,6 +613,10 @@ const canManageSelectedGrades =
 
     });
 
+    attendanceDirtyRef.current.clear();
+    gradeDirtyRef.current.clear();
+    setAttendanceSaveState("saved");
+    setGradeSaveState("saved");
     setSelectedCourseId(courseId); setSelectedMeetingId(meetingId); setAttendanceDraft(map);
 
     setCourseDraft(nextCourse ?? {}); setMessage(""); setTab("attendance");
@@ -568,7 +625,12 @@ const canManageSelectedGrades =
 
 
 
-  function loadMeeting(meetingId: string) {
+  async function loadMeeting(meetingId: string) {
+
+    if (meetingId !== selectedMeetingId && attendanceDirtyRef.current.size) {
+      const saved = await persistAttendance(true);
+      if (!saved) { notify("Perubahan absensi belum dapat disimpan. Tetap di pertemuan ini agar perubahan tidak hilang."); return; }
+    }
 
     const map: Record<string, StatusValue> = {};
 
@@ -578,6 +640,8 @@ const canManageSelectedGrades =
 
     });
 
+    attendanceDirtyRef.current.clear();
+    setAttendanceSaveState("saved");
     setSelectedMeetingId(meetingId); setAttendanceDraft(map); setMessage("");
 
   }
@@ -779,35 +843,69 @@ const canManageSelectedGrades =
   }
 
 
-  async function saveAttendance() {
-    if (!canManageSelectedAttendance) { notify("Anda tidak memiliki akses untuk mengubah absensi kelas ini."); return; }
-
-    if (!selectedMeetingId) return;
-
-    setSaving(true); setMessage("");
-
-    const filled = courseStudents.filter((s) => attendanceDraft[s.id]).map((s) => ({ meeting_id: selectedMeetingId, student_id: s.id, status: attendanceDraft[s.id] as AttendanceStatus }));
-
-    const existingBlankIds = courseStudents.filter((s) => !attendanceDraft[s.id]).map((s) => attendance.find((a) => a.meeting_id === selectedMeetingId && a.student_id === s.id)?.id).filter(Boolean) as string[];
-
-    if (filled.length) {
-
-      const { error } = await supabase.from("attendance").upsert(filled, { onConflict: "meeting_id,student_id" });
-
-      if (error) { notify(`Gagal menyimpan absensi: ${error.message}`); setSaving(false); return; }
-
+  async function persistAttendance(silent = false) {
+    if (!canManageSelectedAttendance || !selectedMeetingId) {
+      if (!silent) notify("Anda tidak memiliki akses untuk mengubah absensi kelas ini.");
+      return false;
     }
 
-    if (existingBlankIds.length) await supabase.from("attendance").delete().in("id", existingBlankIds);
+    const revision = attendanceRevisionRef.current;
+    setAttendanceSaveState("saving");
+    if (!silent) { setSaving(true); setMessage(""); }
 
-    const { data } = await supabase.from("attendance").select("*");
-    setAttendance((data ?? []) as Attendance[]);
-    attendanceDirtyRef.current.clear();
+    const filled = courseStudents
+      .filter((student) => attendanceDraft[student.id])
+      .map((student) => ({
+        meeting_id: selectedMeetingId,
+        student_id: student.id,
+        status: attendanceDraft[student.id] as AttendanceStatus,
+      }));
 
-    notify("Absensi berhasil disimpan."); setSaving(false);
+    const existingBlankIds = courseStudents
+      .filter((student) => !attendanceDraft[student.id])
+      .map((student) => attendance.find((row) => row.meeting_id === selectedMeetingId && row.student_id === student.id)?.id)
+      .filter(Boolean) as string[];
 
+    try {
+      if (filled.length) {
+        const { error } = await supabase.from("attendance").upsert(filled, { onConflict: "meeting_id,student_id" });
+        if (error) throw error;
+      }
+
+      if (existingBlankIds.length) {
+        const { error } = await supabase.from("attendance").delete().in("id", existingBlankIds);
+        if (error) throw error;
+      }
+
+      const { data, error } = await supabase.from("attendance").select("*").eq("meeting_id", selectedMeetingId);
+      if (error) throw error;
+
+      setAttendance((items) => [
+        ...items.filter((item) => item.meeting_id !== selectedMeetingId),
+        ...((data ?? []) as Attendance[]),
+      ]);
+
+      if (attendanceRevisionRef.current === revision) {
+        attendanceDirtyRef.current.clear();
+        setAttendanceSaveState("saved");
+      } else {
+        setAttendanceSaveState("unsaved");
+      }
+
+      if (!silent) notify("Absensi berhasil disimpan.");
+      return true;
+    } catch (error) {
+      setAttendanceSaveState("error");
+      if (!silent) notify(`Gagal menyimpan absensi: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return false;
+    } finally {
+      if (!silent) setSaving(false);
+    }
   }
 
+  async function saveAttendance() {
+    await persistAttendance(false);
+  }
 
 
   async function updateMeetingDate(date: string) {
@@ -984,49 +1082,83 @@ async function refreshStudents() {
 
 
 
-  async function saveGrades() {
-    if (!canManageSelectedGrades) { notify("Anda tidak memiliki akses untuk mengubah nilai."); return; }
+  async function persistGrades(silent = false) {
+    if (!canManageSelectedGrades) {
+      if (!silent) notify("Anda tidak memiliki akses untuk mengubah nilai.");
+      return false;
+    }
 
-    setSaving(true); setMessage("");
+    const revision = gradeRevisionRef.current;
+    setGradeSaveState("saving");
+    if (!silent) { setSaving(true); setMessage(""); }
 
     const filled: { assessment_id: string; student_id: string; score: number }[] = [];
-
     const deleteIds: string[] = [];
 
     for (const assessment of courseAssessments) {
-
       for (const student of courseStudents) {
-
-        const key = `${assessment.id}:${student.id}`; const raw = gradeDraft[key]?.trim() ?? "";
-
+        const key = `${assessment.id}:${student.id}`;
+        const raw = gradeDraft[key]?.trim() ?? "";
         if (raw === "") {
-
-          const existing = grades.find((g) => g.assessment_id === assessment.id && g.student_id === student.id); if (existing) deleteIds.push(existing.id); continue;
-
+          const existing = grades.find((row) => row.assessment_id === assessment.id && row.student_id === student.id);
+          if (existing) deleteIds.push(existing.id);
+          continue;
         }
 
         const score = Number(raw);
-
-        if (!Number.isFinite(score) || score < 0 || score > Number(assessment.max_score)) { notify(`Nilai ${student.name} untuk ${assessment.name} harus 0–${assessment.max_score}.`); setSaving(false); return; }
-
+        if (!Number.isFinite(score) || score < 0 || score > Number(assessment.max_score)) {
+          setGradeSaveState("unsaved");
+          if (!silent) notify(`Nilai ${student.name} untuk ${assessment.name} harus 0–${assessment.max_score}.`);
+          if (!silent) setSaving(false);
+          return false;
+        }
         filled.push({ assessment_id: assessment.id, student_id: student.id, score });
+      }
+    }
 
+    try {
+      if (filled.length) {
+        const { error } = await supabase.from("grades").upsert(filled, { onConflict: "assessment_id,student_id" });
+        if (error) throw error;
+      }
+      if (deleteIds.length) {
+        const { error } = await supabase.from("grades").delete().in("id", deleteIds);
+        if (error) throw error;
       }
 
+      const assessmentIds = courseAssessments.map((item) => item.id);
+      const result = assessmentIds.length
+        ? await supabase.from("grades").select("*").in("assessment_id", assessmentIds)
+        : { data: [], error: null };
+      if (result.error) throw result.error;
+
+      const currentIds = new Set(assessmentIds);
+      setGrades((items) => [
+        ...items.filter((item) => !currentIds.has(item.assessment_id)),
+        ...((result.data ?? []) as Grade[]),
+      ]);
+
+      if (gradeRevisionRef.current === revision) {
+        gradeDirtyRef.current.clear();
+        setGradeSaveState("saved");
+      } else {
+        setGradeSaveState("unsaved");
+      }
+
+      if (!silent) notify("Nilai berhasil disimpan.");
+      return true;
+    } catch (error) {
+      setGradeSaveState("error");
+      if (!silent) notify(`Gagal menyimpan nilai: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return false;
+    } finally {
+      if (!silent) setSaving(false);
     }
-
-    if (filled.length) {
-
-      const { error } = await supabase.from("grades").upsert(filled, { onConflict: "assessment_id,student_id" }); if (error) { notify(`Gagal menyimpan nilai: ${error.message}`); setSaving(false); return; }
-
-    }
-
-    if (deleteIds.length) await supabase.from("grades").delete().in("id", deleteIds);
-
-    const { data } = await supabase.from("grades").select("*"); setGrades((data ?? []) as Grade[]); notify("Nilai berhasil disimpan."); setSaving(false);
-
   }
 
+  async function saveGrades() {
+    await persistGrades(false);
+  }
 
 
   async function saveCourseSettings() {
@@ -1571,6 +1703,17 @@ async function refreshAttendance() {
             Asdos
           </button>
         )}
+
+        {access.isSuperAdmin && (
+          <button
+            type="button"
+            className={adminView === "system" ? "active" : ""}
+            onClick={() => setAdminView("system")}
+          >
+            <span>⚙️</span>
+            Sistem
+          </button>
+        )}
       </nav>
 
       <div className="admin-pro-topbar-actions">
@@ -1641,7 +1784,7 @@ async function refreshAttendance() {
     )}
 
     {adminView === "audit" && (
-      <AuditLogViewer courses={courses} />
+      <AuditLogViewer courses={courses} canRecover={access.isSuperAdmin} />
     )}
 
     {access.isSuperAdmin && adminView === "archive" && (
@@ -1680,6 +1823,10 @@ async function refreshAttendance() {
 
     {access.isSuperAdmin && adminView === "assistants" && (
       <AssistantAccountManager />
+    )}
+
+    {access.isSuperAdmin && adminView === "system" && (
+      <SystemControlCenter />
     )}
 
     {adminView === "workspace" && (
@@ -1735,15 +1882,15 @@ async function refreshAttendance() {
 
     onSelect={(courseId) => {
 
-      chooseCourse(courseId);
+      void chooseCourse(courseId);
 
     }}
 
   />
 
-          {tab === "attendance" && <div className="admin-grid"><aside className="panel admin-side"><div className="panel-head"><div><h2>Pertemuan</h2><p>{courseMeetings.length} pertemuan</p></div></div><div className="panel-body"><div className="meeting-list">{courseMeetings.map((meeting) => <button key={meeting.id} className={`meeting-btn ${selectedMeetingId === meeting.id ? "active" : ""}`} onClick={() => loadMeeting(meeting.id)}><span><strong>P{meeting.meeting_no}</strong><br/><small>{meeting.meeting_date}</small></span><span>›</span></button>)}</div></div></aside>
+          {tab === "attendance" && <div className="admin-grid"><aside className="panel admin-side"><div className="panel-head"><div><h2>Pertemuan</h2><p>{courseMeetings.length} pertemuan</p></div></div><div className="panel-body"><div className="meeting-list">{courseMeetings.map((meeting) => <button key={meeting.id} className={`meeting-btn ${selectedMeetingId === meeting.id ? "active" : ""}`} onClick={() => void loadMeeting(meeting.id)}><span><strong>P{meeting.meeting_no}</strong><br/><small>{meeting.meeting_date}</small></span><span>›</span></button>)}</div></div></aside>
 
-            <section className="panel"><div className="panel-head"><div><h2>Input Absensi {selectedMeeting ? `Pertemuan ${selectedMeeting.meeting_no}` : ""}</h2><p>{selectedMeeting ? formatLongDate(selectedMeeting.meeting_date) : "Pilih pertemuan"}</p></div></div><div className="panel-body"><div className="admin-toolbar"><div className="field"><label>Tanggal Pertemuan</label><input className="input" type="date" value={selectedMeeting?.meeting_date ?? ""} disabled={!canEditSelectedCourse} onChange={(e) => updateMeetingDate(e.target.value)} /></div><div className="admin-actions"><button className="btn btn-success" disabled={!canManageSelectedAttendance} onClick={() => { const x: Record<string, StatusValue> = {}; courseStudents.forEach((s) => x[s.id] = "H"); setAttendanceDraft(x); }}>Semua Hadir</button>
+            <section className="panel"><div className="panel-head"><div><h2>Input Absensi {selectedMeeting ? `Pertemuan ${selectedMeeting.meeting_no}` : ""}</h2><p>{selectedMeeting ? formatLongDate(selectedMeeting.meeting_date) : "Pilih pertemuan"}</p></div><SaveStateBadge state={attendanceSaveState} /></div><div className="panel-body"><div className="admin-toolbar"><div className="field"><label>Tanggal Pertemuan</label><input className="input" type="date" value={selectedMeeting?.meeting_date ?? ""} disabled={!canEditSelectedCourse} onChange={(e) => updateMeetingDate(e.target.value)} /></div><div className="admin-actions"><button className="btn btn-success" disabled={!canManageSelectedAttendance} onClick={() => { const x: Record<string, StatusValue> = {}; courseStudents.forEach((student) => { x[student.id] = "H"; attendanceDirtyRef.current.add(student.id); }); attendanceRevisionRef.current += 1; setAttendanceSaveState("unsaved"); setAttendanceDraft(x); }}>Semua Hadir</button>
 
             <button
 
@@ -1763,6 +1910,8 @@ async function refreshAttendance() {
     x[s.id] = "";
     attendanceDirtyRef.current.add(s.id);
   });
+  attendanceRevisionRef.current += 1;
+  setAttendanceSaveState("unsaved");
   setAttendanceDraft(x);
 }}>Kosongkan</button><button className="btn btn-primary" onClick={saveAttendance} disabled={saving || !selectedMeetingId || !canManageSelectedAttendance}>{saving ? "Menyimpan..." : "Simpan Absensi"}</button></div></div>
 
@@ -1770,7 +1919,7 @@ async function refreshAttendance() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
                     gap: 16,
                     alignItems: "start",
                     marginBottom: 18,
@@ -1781,11 +1930,13 @@ async function refreshAttendance() {
                     meetingNo={selectedMeeting.meeting_no}
                     courseName={selectedCourse.name}
                     classLabel={selectedCourse.class_name}
+                    participantCount={liveParticipantCount}
                   />
 
                   <AttendanceLiveMonitor
                     meetingId={selectedMeeting.id}
                     students={courseStudents}
+                    onParticipantCount={setLiveParticipantCount}
                     onAttendanceChange={(rows) => {
                       setAttendance((items) => [
                         ...items.filter(
@@ -1816,6 +1967,8 @@ async function refreshAttendance() {
 
               <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama Mahasiswa</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} disabled={!canManageSelectedAttendance} onChange={(e) => {
   attendanceDirtyRef.current.add(student.id);
+  attendanceRevisionRef.current += 1;
+  setAttendanceSaveState("unsaved");
   setAttendanceDraft((d) => ({
     ...d,
     [student.id]: e.target.value as StatusValue,
@@ -1826,7 +1979,7 @@ async function refreshAttendance() {
 
 
 
-          {tab === "grades" && <section className="panel"><div className="panel-head"><div><h2>Input Nilai</h2><p>Isi nilai mentah. Nilai akhir dihitung otomatis berdasarkan bobot.</p></div><span className={`badge ${totalWeight === 100 ? "good" : "warn"}`}>Total bobot {totalWeight}%</span></div><div className="panel-body">
+          {tab === "grades" && <section className="panel"><div className="panel-head"><div><h2>Input Nilai</h2><p>Isi nilai mentah. Autosave aktif setelah Anda berhenti mengetik.</p></div><div className="panel-head-actions"><SaveStateBadge state={gradeSaveState} /><span className={`badge ${totalWeight === 100 ? "good" : "warn"}`}>Total bobot {totalWeight}%</span></div></div><div className="panel-body">
 
             {selectedCourse && (
 
@@ -1875,7 +2028,7 @@ async function refreshAttendance() {
 
             </div>}
 
-            <div className="table-wrap"><table className="admin-table grade-input-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{courseAssessments.map((item) => <th key={item.id}>{item.name}<small>Maks {item.max_score}</small></th>)}<th>Nilai Akhir</th><th>Huruf Mutu</th></tr></thead><tbody>{courseStudents.map((student, index) => { const final = calculateFinalScore(student.id, courseAssessments, gradeMap); const letter = resolveGradeLetter(final.score, gradeScales); return <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td>{courseAssessments.map((item) => { const key = `${item.id}:${student.id}`; const initialValue = gradeDraft[key] ?? (gradeMap.has(key) ? String(gradeMap.get(key)) : ""); return <td key={item.id}><input className="score-input" type="number" min="0" max={item.max_score} step="0.01" value={initialValue} disabled={!canManageSelectedGrades} onChange={(e) => setGradeDraft((d) => ({ ...d, [key]: e.target.value }))}/></td>; })}<td><strong>{final.score.toFixed(2)}</strong></td><td><span className="badge good">{letter}</span></td></tr>; })}</tbody></table></div>
+            <div className="table-wrap"><table className="admin-table grade-input-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{courseAssessments.map((item) => <th key={item.id}>{item.name}<small>Maks {item.max_score}</small></th>)}<th>Nilai Akhir</th><th>Huruf Mutu</th></tr></thead><tbody>{courseStudents.map((student, index) => { const final = calculateFinalScore(student.id, courseAssessments, gradeMap); const letter = resolveGradeLetter(final.score, gradeScales); return <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td>{courseAssessments.map((item) => { const key = `${item.id}:${student.id}`; const initialValue = gradeDraft[key] ?? (gradeMap.has(key) ? String(gradeMap.get(key)) : ""); return <td key={item.id}><input className="score-input" type="number" min="0" max={item.max_score} step="0.01" value={initialValue} disabled={!canManageSelectedGrades} onChange={(e) => { gradeDirtyRef.current.add(key); gradeRevisionRef.current += 1; setGradeSaveState("unsaved"); setGradeDraft((d) => ({ ...d, [key]: e.target.value })); }}/></td>; })}<td><strong>{final.score.toFixed(2)}</strong></td><td><span className="badge good">{letter}</span></td></tr>; })}</tbody></table></div>
 
             <div className="save-row"><span className="muted">Pastikan total bobot idealnya 100%.</span><button className="btn btn-primary" onClick={saveGrades} disabled={saving || !canManageSelectedGrades}>{saving ? "Menyimpan..." : "Simpan Semua Nilai"}</button></div>
 

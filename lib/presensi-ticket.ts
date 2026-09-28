@@ -8,9 +8,9 @@ function getSecret() {
   const secret =
     process.env.QR_SIGNING_SECRET;
 
-  if (!secret) {
+  if (!secret || secret.length < 24) {
     throw new Error(
-      "QR_SIGNING_SECRET belum dikonfigurasi."
+      "QR_SIGNING_SECRET belum dikonfigurasi atau terlalu pendek."
     );
   }
 
@@ -154,7 +154,8 @@ export function verifyDynamicQr(
 export function createCheckinTicket(
   sessionId: string,
   sessionToken: string,
-  sessionEndsAt: string
+  sessionEndsAt: string,
+  maxMinutes = 5,
 ) {
   const sessionEnd =
     new Date(
@@ -164,7 +165,7 @@ export function createCheckinTicket(
   const expiresAt =
     Math.min(
       Date.now() +
-        5 *
+        Math.max(1, Math.min(15, maxMinutes)) *
           60 *
           1000,
 

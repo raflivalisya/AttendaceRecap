@@ -23,9 +23,9 @@ function getSecret() {
     process.env
       .QR_SIGNING_SECRET;
 
-  if (!secret) {
+  if (!secret || secret.length < 24) {
     throw new Error(
-      "QR_SIGNING_SECRET belum dikonfigurasi."
+      "QR_SIGNING_SECRET belum dikonfigurasi atau terlalu pendek."
     );
   }
 

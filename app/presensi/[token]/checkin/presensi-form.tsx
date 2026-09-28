@@ -1,8 +1,6 @@
 "use client";
 
-import {
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type SessionInfo = {
   meetingNo: number;
@@ -14,635 +12,291 @@ type SessionInfo = {
   endsAt: string;
   radiusMeters: number;
   campusName: string;
+  supportMessage: string;
 };
 
-type Props = {
-  token: string;
-  initialInfo: SessionInfo;
-};
+type Props = { token: string; initialInfo: SessionInfo };
+type LocationData = { latitude: number; longitude: number; accuracy: number };
+type PermissionStateValue = "granted" | "prompt" | "denied" | "unknown";
 
-type LocationData = {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-};
-
-function readLocation():
-  Promise<LocationData> {
-  return new Promise(
-    (
-      resolve,
-      reject
-    ) => {
-      if (
-        typeof navigator ===
-          "undefined" ||
-        !navigator.geolocation
-      ) {
-        reject(
-          new Error(
-            "Browser tidak mendukung akses lokasi."
-          )
-        );
-
-        return;
-      }
-
-      navigator.geolocation
-        .getCurrentPosition(
-          (
-            position
-          ) => {
-            resolve({
-              latitude:
-                position
-                  .coords
-                  .latitude,
-
-              longitude:
-                position
-                  .coords
-                  .longitude,
-
-              accuracy:
-                position
-                  .coords
-                  .accuracy,
-            });
-          },
-
-          (
-            error
-          ) => {
-            if (
-              error.code ===
-              error.PERMISSION_DENIED
-            ) {
-              reject(
-                new Error(
-                  "Izin lokasi ditolak. Aktifkan Location Services dan izinkan Safari menggunakan lokasi."
-                )
-              );
-
-              return;
-            }
-
-            if (
-              error.code ===
-              error.POSITION_UNAVAILABLE
-            ) {
-              reject(
-                new Error(
-                  "Lokasi tidak tersedia. Pastikan GPS aktif."
-                )
-              );
-
-              return;
-            }
-
-            if (
-              error.code ===
-              error.TIMEOUT
-            ) {
-              reject(
-                new Error(
-                  "GPS terlalu lama merespons. Coba kembali."
-                )
-              );
-
-              return;
-            }
-
-            reject(
-              new Error(
-                "Gagal membaca lokasi."
-              )
-            );
-          },
-
-          {
-            enableHighAccuracy:
-              true,
-
-            timeout:
-              20000,
-
-            maximumAge:
-              0,
-          }
-        );
+function getLocation(): Promise<LocationData> {
+  return new Promise((resolve, reject) => {
+    if (typeof window !== "undefined" && !window.isSecureContext && location.hostname !== "localhost") {
+      reject(new Error("Akses GPS membutuhkan koneksi HTTPS. Buka kembali QR dari alamat HTTPS aplikasi."));
+      return;
     }
-  );
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      reject(new Error("Browser ini tidak mendukung akses lokasi. Gunakan Safari/Chrome terbaru."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      }),
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          reject(new Error("Izin lokasi ditolak. Ikuti panduan izin lokasi di bawah, lalu coba lagi."));
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          reject(new Error("Lokasi belum tersedia. Aktifkan GPS dan tunggu beberapa detik di area terbuka."));
+        } else if (error.code === error.TIMEOUT) {
+          reject(new Error("GPS terlalu lama merespons. Pastikan lokasi presisi aktif, lalu coba lagi."));
+        } else {
+          reject(new Error("Gagal membaca lokasi perangkat."));
+        }
+      },
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+    );
+  });
 }
 
-export default function PresensiForm({
-  token,
-  initialInfo,
-}: Props) {
-  const [
-    npm,
-    setNpm,
-  ] =
-    useState("");
+function permissionLabel(state: PermissionStateValue) {
+  if (state === "granted") return "Diizinkan";
+  if (state === "denied") return "Ditolak";
+  if (state === "prompt") return "Akan diminta";
+  return "Belum diketahui";
+}
 
-  const [
-    loading,
-    setLoading,
-  ] =
-    useState(false);
+export default function PresensiForm({ token, initialInfo }: Props) {
+  const [npm, setNpm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [message, setMessage] = useState("");
+  const [permission, setPermission] = useState<PermissionStateValue>("unknown");
+  const [locationPreview, setLocationPreview] = useState<LocationData | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const [detail, setDetail] = useState<{ name?: string; distance?: number | null; accuracy?: number | null } | null>(null);
 
-  const [
-    success,
-    setSuccess,
-  ] =
-    useState(false);
+  const isIOS = useMemo(() => typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent), []);
+  const isAndroid = useMemo(() => typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent), []);
 
-  const [
-    message,
-    setMessage,
-  ] =
-    useState("");
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  const [
-    detail,
-    setDetail,
-  ] =
-    useState<{
-      name?: string;
-      distance?: number;
-      accuracy?: number;
-    } | null>(
-      null
-    );
+  useEffect(() => {
+    let permissionStatus: PermissionStatus | null = null;
+    let active = true;
+
+    async function readPermission() {
+      try {
+        if (!navigator.permissions?.query) return;
+        permissionStatus = await navigator.permissions.query({ name: "geolocation" });
+        if (!active) return;
+        setPermission(permissionStatus.state as PermissionStateValue);
+        permissionStatus.onchange = () => setPermission(permissionStatus?.state as PermissionStateValue);
+      } catch {
+        setPermission("unknown");
+      }
+    }
+
+    void readPermission();
+    return () => {
+      active = false;
+      if (permissionStatus) permissionStatus.onchange = null;
+    };
+  }, []);
+
+  const remainingSeconds = Math.max(0, Math.ceil((new Date(initialInfo.endsAt).getTime() - now) / 1000));
+  const remainingText = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+
+  async function testLocation() {
+    setMessage("Memeriksa GPS…");
+    try {
+      const location = await getLocation();
+      setLocationPreview(location);
+      setPermission("granted");
+      setMessage(`GPS siap. Akurasi saat ini ±${Math.round(location.accuracy)} meter.`);
+    } catch (error) {
+      setLocationPreview(null);
+      setMessage(error instanceof Error ? error.message : "Gagal membaca GPS.");
+    }
+  }
 
   async function kirimPresensi() {
-    if (
-      loading
-    ) {
+    if (loading || success) return;
+    const cleanNpm = npm.trim();
+    if (!/^[A-Za-z0-9._-]{4,32}$/.test(cleanNpm)) {
+      setMessage("Masukkan NPM yang valid terlebih dahulu.");
+      return;
+    }
+    if (remainingSeconds <= 0) {
+      setMessage("Waktu presensi sudah berakhir. Scan QR terbaru jika sesi dibuka kembali.");
       return;
     }
 
-    const cleanNpm =
-      npm.trim();
-
-    if (
-      !cleanNpm
-    ) {
-      setMessage(
-        "Masukkan NPM terlebih dahulu."
-      );
-
-      return;
-    }
-
-    setLoading(
-      true
-    );
-
-    setSuccess(
-      false
-    );
-
-    setDetail(
-      null
-    );
+    setLoading(true);
+    setDetail(null);
+    setMessage("Meminta lokasi GPS presisi…");
 
     try {
-      /*
-       * ====================================
-       * GPS
-       * ====================================
-       */
+      const location = await getLocation();
+      setLocationPreview(location);
+      setPermission("granted");
+      setMessage(`GPS ditemukan (±${Math.round(location.accuracy)} m). Mengirim presensi…`);
 
-      setMessage(
-        "Meminta lokasi GPS..."
-      );
-
-      const location =
-        await readLocation();
-
-      setMessage(
-        `Lokasi ditemukan. Akurasi ±${Math.round(
-          location.accuracy
-        )} meter. Mengirim presensi...`
-      );
-
-      /*
-       * ====================================
-       * SEND
-       * ====================================
-       */
-
-      const controller =
-        new AbortController();
-
-      const timeout =
-        window.setTimeout(
-          () => {
-            controller.abort();
-          },
-          20000
-        );
-
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 20_000);
       try {
-        const response =
-          await fetch(
-            `/api/presensi/${encodeURIComponent(
-              token
-            )}`,
-            {
-              method:
-                "POST",
+        const response = await fetch(`/api/presensi/${encodeURIComponent(token)}`, {
+          method: "POST",
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            npm: cleanNpm,
+            latitude: location.latitude,
+            longitude: location.longitude,
+            accuracy: location.accuracy,
+          }),
+          signal: controller.signal,
+        });
 
-              cache:
-                "no-store",
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || `Presensi gagal (${response.status}).`);
 
-              /*
-               * WAJIB agar Safari
-               * mengirim HttpOnly cookie.
-               */
-              credentials:
-                "include",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-
-                Accept:
-                  "application/json",
-              },
-
-              body:
-                JSON.stringify({
-                  npm:
-                    cleanNpm,
-
-                  latitude:
-                    location.latitude,
-
-                  longitude:
-                    location.longitude,
-
-                  accuracy:
-                    location.accuracy,
-                }),
-
-              signal:
-                controller.signal,
-            }
-          );
-
-        const raw =
-          await response.text();
-
-        let result:
-          any = {};
-
-        try {
-          result =
-            JSON.parse(
-              raw
-            );
-        } catch {
-          console.error(
-            "SERVER RESPONSE:",
-            raw
-          );
-
-          throw new Error(
-            "Respons server tidak valid."
-          );
-        }
-
-        if (
-          !response.ok
-        ) {
-          throw new Error(
-            result.message ||
-              `Presensi gagal (${response.status}).`
-          );
-        }
-
-        setSuccess(
-          true
-        );
-
-        setMessage(
-          result.message ||
-            "Presensi berhasil."
-        );
-
+        setSuccess(true);
+        setMessage(result.message || "Presensi berhasil.");
         setDetail({
-          name:
-            result.student
-              ?.name,
-
-          distance:
-            result.distance,
-
-          accuracy:
-            result.accuracy,
+          name: result.student?.name,
+          distance: typeof result.distance === "number" ? result.distance : null,
+          accuracy: typeof result.accuracy === "number" ? result.accuracy : null,
         });
       } finally {
-        window.clearTimeout(
-          timeout
-        );
+        window.clearTimeout(timeout);
       }
-    } catch (
-      error: any
-    ) {
-      console.error(
-        "PRESENSI ERROR:",
-        error
-      );
-
-      if (
-        error?.name ===
-        "AbortError"
-      ) {
-        setMessage(
-          "Server terlalu lama merespons. Coba kembali."
-        );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setMessage("Server terlalu lama merespons. Coba lagi atau scan ulang QR jika sesi hampir habis.");
       } else {
-        setMessage(
-          error?.message ||
-            "Presensi gagal."
-        );
+        setMessage(error instanceof Error ? error.message : "Presensi gagal.");
       }
     } finally {
-      setLoading(
-        false
-      );
+      setLoading(false);
     }
   }
 
   return (
-    <section className="page">
-      <div
-        className="shell"
-
-        style={{
-          width:
-            "100%",
-
-          maxWidth:
-            600,
-
-          margin:
-            "0 auto",
-        }}
-      >
-        <div className="hero">
+    <main className="presensi-production-page">
+      <div className="presensi-shell">
+        <header className="presensi-hero">
           <div>
-            <div className="eyebrow">
-              Presensi Mahasiswa
-            </div>
-
-            <h1>
-              {
-                initialInfo.courseName
-              }
-            </h1>
-
-            <p>
-              Pertemuan{" "}
-              {
-                initialInfo.meetingNo
-              }
-            </p>
+            <span className="eyebrow">Presensi Mahasiswa</span>
+            <h1>{initialInfo.courseName}</h1>
+            <p>{initialInfo.className} · Pertemuan {initialInfo.meetingNo}</p>
           </div>
-        </div>
+          <div className={`presensi-timer ${remainingSeconds <= 60 ? "urgent" : ""}`}>
+            <small>Sisa sesi</small>
+            <strong>{remainingText}</strong>
+          </div>
+        </header>
 
-        <div className="panel">
+        <section className="panel presensi-main-card">
           <div className="panel-body">
-
-            <p>
-              <strong>
-                Kelas:
-              </strong>{" "}
-              {
-                initialInfo.className
-              }
-            </p>
-
-            <p>
-              <strong>
-                Dosen:
-              </strong>{" "}
-              {
-                initialInfo.lecturer
-              }
-            </p>
-
-            <div
-              style={{
-                marginTop:
-                  14,
-
-                marginBottom:
-                  20,
-
-                padding:
-                  14,
-
-                borderRadius:
-                  10,
-
-                background:
-                  "#f1f5f9",
-              }}
-            >
-              📍{" "}
-
-              <strong>
-                Universitas Teknokrat Indonesia
-              </strong>
-
-              <br />
-
-              Radius maksimal{" "}
-
-              {
-                initialInfo.radiusMeters
-              }{" "}
-
-              meter
+            <div className="presensi-session-grid">
+              <div><span>Dosen</span><strong>{initialInfo.lecturer}</strong></div>
+              <div><span>Jadwal</span><strong>{initialInfo.schedule || "-"}</strong></div>
+              <div><span>Lokasi</span><strong>{initialInfo.campusName}</strong></div>
+              <div><span>Radius</span><strong>{initialInfo.radiusMeters} meter</strong></div>
             </div>
 
-            {!success && (
-              <>
-                <div className="field">
-                  <label
-                    htmlFor="student-npm"
-                  >
-                    NPM
-                  </label>
+            <div className="gps-readiness">
+              <div>
+                <span className={`gps-dot permission-${permission}`} aria-hidden="true" />
+                <div>
+                  <strong>Izin lokasi: {permissionLabel(permission)}</strong>
+                  <small>{locationPreview ? `GPS ±${Math.round(locationPreview.accuracy)} meter` : "Lokasi presisi diperlukan saat mengirim presensi."}</small>
+                </div>
+              </div>
+              {!success && (
+                <button type="button" className="btn btn-secondary btn-small" onClick={() => void testLocation()} disabled={loading}>
+                  Tes GPS
+                </button>
+              )}
+            </div>
 
+            {!success ? (
+              <>
+                <div className="field presensi-npm-field">
+                  <label htmlFor="student-npm">NPM</label>
                   <input
                     id="student-npm"
-
                     type="text"
-
                     className="input"
-
-                    value={
-                      npm
-                    }
-
-                    onChange={(
-                      event
-                    ) => {
-                      setNpm(
-                        event.currentTarget.value
-                      );
-                    }}
-
+                    value={npm}
+                    onChange={(event) => setNpm(event.currentTarget.value.replace(/\s/g, "").slice(0, 32))}
                     placeholder="Masukkan NPM"
-
                     inputMode="numeric"
-
                     autoComplete="off"
-
-                    disabled={
-                      loading
-                    }
-
-                    style={{
-                      fontSize:
-                        16,
+                    disabled={loading}
+                    maxLength={32}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void kirimPresensi();
                     }}
                   />
                 </div>
 
-                <button
-                  type="button"
-
-                  className="btn btn-primary"
-
-                  disabled={
-                    loading
-                  }
-
-                  onClick={() => {
-                    void kirimPresensi();
-                  }}
-
-                  style={{
-                    display:
-                      "block",
-
-                    width:
-                      "100%",
-
-                    minHeight:
-                      52,
-
-                    marginTop:
-                      16,
-
-                    cursor:
-                      "pointer",
-
-                    touchAction:
-                      "manipulation",
-
-                    WebkitAppearance:
-                      "none",
-                  }}
-                >
-                  {loading
-                    ? "Memeriksa..."
-                    : "Kirim Presensi"}
+                <button type="button" className="btn btn-primary presensi-submit" disabled={loading || remainingSeconds <= 0} onClick={() => void kirimPresensi()}>
+                  {loading ? "Memeriksa & Mengirim…" : "Kirim Presensi"}
                 </button>
               </>
-            )}
-
-            {success && (
-              <div
-                className="success"
-
-                style={{
-                  marginTop:
-                    16,
-
-                  padding:
-                    16,
-
-                  borderRadius:
-                    10,
-                }}
-              >
-                <strong>
-                  ✓ Presensi berhasil
-                </strong>
-
-                {detail?.name && (
-                  <div
-                    style={{
-                      marginTop:
-                        8,
-                    }}
-                  >
-                    {
-                      detail.name
-                    }
-                  </div>
-                )}
-
-                {typeof detail?.distance ===
-                  "number" && (
-                  <div>
-                    Jarak dari kampus:{" "}
-
-                    {
-                      detail.distance
-                    }{" "}
-
-                    meter
-                  </div>
-                )}
-
-                {typeof detail?.accuracy ===
-                  "number" && (
-                  <div>
-                    Akurasi GPS: ±
-                    {
-                      detail.accuracy
-                    }{" "}
-                    meter
-                  </div>
-                )}
+            ) : (
+              <div className="presensi-success-card">
+                <span className="presensi-success-icon">✓</span>
+                <div>
+                  <strong>Presensi berhasil</strong>
+                  {detail?.name && <span>{detail.name}</span>}
+                  <small>
+                    {typeof detail?.distance === "number" ? `Jarak ${detail.distance} m` : "Lokasi tervalidasi"}
+                    {typeof detail?.accuracy === "number" ? ` · GPS ±${detail.accuracy} m` : ""}
+                  </small>
+                </div>
               </div>
             )}
 
             {message && (
-              <div
-                className={
-                  success
-                    ? "success"
-                    : "error"
-                }
-
-                style={{
-                  marginTop:
-                    16,
-
-                  padding:
-                    12,
-
-                  borderRadius:
-                    8,
-                }}
-              >
-                {
-                  message
-                }
+              <div className={`presensi-message ${success ? "success" : "info"}`} role="status" aria-live="polite">
+                {message}
               </div>
             )}
 
+            {!success && (
+              <section className="location-help">
+                <h2>Panduan Izin Lokasi</h2>
+                <p>Jika GPS ditolak atau tidak presisi, ikuti perangkat Anda. Nama menu dapat sedikit berbeda menurut versi OS.</p>
+
+                <details open={isIOS || permission === "denied"}>
+                  <summary>iPhone / iPad · Safari</summary>
+                  <ol>
+                    <li>Buka <strong>Settings → Privacy & Security → Location Services</strong>, lalu pastikan aktif.</li>
+                    <li>Pilih <strong>Safari Websites</strong> (atau pengaturan lokasi Safari), lalu pilih <strong>While Using the App</strong>.</li>
+                    <li>Aktifkan <strong>Precise Location</strong>.</li>
+                    <li>Kembali ke halaman ini, reload/scan ulang QR, lalu pilih <strong>Allow</strong> saat Safari meminta lokasi.</li>
+                    <li>Jika pernah memilih “Don’t Allow”, buka pengaturan situs Safari untuk halaman ini dan ubah Location menjadi <strong>Allow</strong>.</li>
+                  </ol>
+                </details>
+
+                <details open={isAndroid || permission === "denied"}>
+                  <summary>Android · Chrome</summary>
+                  <ol>
+                    <li>Buka <strong>Settings → Apps → Chrome → Permissions → Location</strong>.</li>
+                    <li>Pilih <strong>Allow only while using the app</strong> dan aktifkan <strong>Use precise location</strong>.</li>
+                    <li>Di Chrome, buka pengaturan situs halaman AttendanceRecap dan pastikan <strong>Location = Allow</strong>.</li>
+                    <li>Nyalakan Location/GPS perangkat, kembali ke halaman ini, lalu tekan <strong>Tes GPS</strong>.</li>
+                  </ol>
+                </details>
+
+                <div className="location-help-tip">
+                  {initialInfo.supportMessage || "Jangan gunakan mode lokasi perkiraan jika akurasi masih terlalu besar. Tunggu beberapa detik agar GPS stabil sebelum menekan Kirim Presensi."}
+                </div>
+              </section>
+            )}
           </div>
-        </div>
+        </section>
       </div>
-    </section>
+    </main>
   );
 }

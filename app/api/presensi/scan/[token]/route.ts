@@ -29,8 +29,8 @@ function getSupabase() {
       .NEXT_PUBLIC_SUPABASE_URL;
 
   const serviceKey =
-    process.env
-      .SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY;
 
   if (
     !url ||
@@ -221,12 +221,27 @@ export async function GET(
      * ======================================
      */
 
-    const ticket =
-      createCheckinTicket(
-        session.id,
-        session.token,
-        session.ends_at
-      );
+    let ticketMinutes = 5;
+    const { data: ticketSetting } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "checkin_ticket_minutes")
+      .maybeSingle();
+
+    const rawTicketMinutes = ticketSetting?.value && typeof ticketSetting.value === "object"
+      ? (ticketSetting.value as { value?: unknown }).value
+      : undefined;
+    const parsedTicketMinutes = Number(rawTicketMinutes);
+    if (Number.isFinite(parsedTicketMinutes)) {
+      ticketMinutes = Math.max(1, Math.min(15, parsedTicketMinutes));
+    }
+
+    const ticket = createCheckinTicket(
+      session.id,
+      session.token,
+      session.ends_at,
+      ticketMinutes,
+    );
 
     /*
      * ======================================
@@ -268,7 +283,7 @@ export async function GET(
       );
 
     /*
-     * Ticket 5 menit.
+     * Cookie ticket mengikuti pengaturan (signature tetap dibatasi waktu sesi).
      */
     response.cookies.set(
       "presensi_checkin_ticket",
@@ -278,7 +293,7 @@ export async function GET(
           true,
 
         secure:
-          true,
+          request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
 
         sameSite:
           "lax",
@@ -287,7 +302,7 @@ export async function GET(
           "/",
 
         maxAge:
-          5 * 60,
+          Math.max(1, Math.min(ticketMinutes * 60, Math.ceil((end - now) / 1000))),
       }
     );
 
@@ -302,7 +317,7 @@ export async function GET(
           true,
 
         secure:
-          true,
+          request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
 
         sameSite:
           "lax",

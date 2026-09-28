@@ -24,6 +24,7 @@ type Props = {
   meetingId: string;
   students: Student[];
   onAttendanceChange?: (rows: Attendance[]) => void;
+  onParticipantCount?: (count: number) => void;
 };
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
@@ -55,6 +56,7 @@ export default function AttendanceLiveMonitor({
   meetingId,
   students,
   onAttendanceChange,
+  onParticipantCount,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [checkins, setCheckins] = useState<CheckinRow[]>([]);
@@ -177,7 +179,21 @@ export default function AttendanceLiveMonitor({
     [attendanceRows],
   );
 
-  const notFilled = Math.max(0, students.length - filledStudentIds.size);
+  const qrParticipantIds = useMemo(
+    () => new Set(checkins.map((row) => row.student_id)),
+    [checkins],
+  );
+
+  const waitingStudents = useMemo(
+    () => students.filter((student) => !filledStudentIds.has(student.id)),
+    [students, filledStudentIds],
+  );
+
+  useEffect(() => {
+    onParticipantCount?.(qrParticipantIds.size);
+  }, [qrParticipantIds, onParticipantCount]);
+
+  const notFilled = waitingStudents.length;
   const presentPercentage = students.length
     ? Math.round((counts.H / students.length) * 100)
     : 0;
@@ -242,14 +258,15 @@ export default function AttendanceLiveMonitor({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
           gap: 10,
           marginBottom: 14,
         }}
       >
+        <Metric label="QR Masuk" value={qrParticipantIds.size} />
         <Metric label="Hadir" value={counts.H} />
         <Metric label="Total" value={students.length} />
-        <Metric label="Belum" value={notFilled} />
+        <Metric label="Menunggu" value={notFilled} />
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -296,6 +313,23 @@ export default function AttendanceLiveMonitor({
         <SmallStatus label="S" value={counts.S} />
         <SmallStatus label="A" value={counts.A} />
       </div>
+
+      <details className="waiting-students" open={waitingStudents.length > 0 && waitingStudents.length <= 8}>
+        <summary>
+          <span>Mahasiswa Menunggu</span>
+          <strong>{waitingStudents.length}</strong>
+        </summary>
+        <div className="waiting-students-list">
+          {waitingStudents.length ? waitingStudents.map((student) => (
+            <div className="waiting-student-item" key={student.id}>
+              <span><strong>{student.name}</strong><small>{student.npm}</small></span>
+              <span className="badge neutral">Belum check-in</span>
+            </div>
+          )) : (
+            <div className="empty-state compact">Semua mahasiswa sudah memiliki status presensi.</div>
+          )}
+        </div>
+      </details>
 
       <div style={{ fontWeight: 800, marginBottom: 10 }}>Check-in terbaru</div>
 

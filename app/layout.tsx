@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./uiux-overhaul.css";
+import NetworkStatus from "@/components/ui/NetworkStatus";
 
 export const metadata: Metadata = {
   title: {
@@ -18,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
-      <body>{children}</body>
+      <body><NetworkStatus />{children}</body>
     </html>
   );
 }
