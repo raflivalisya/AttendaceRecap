@@ -12,7 +12,7 @@ import type { Assessment, Attendance, AttendanceStatus, Course, Grade, Meeting, 
 
 import { useRouter } from "next/navigation";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import ImportStudentsTxt from "@/components/admin/ImportStudentsTxt";
 
@@ -25,24 +25,6 @@ import ExportGradesExcel from "@/components/admin/ExportGradesExcel";
 import LecturerManager from "@/components/admin/LecturerManager";
 import AdminAnalyticsDashboard from "@/components/admin/AdminAnalyticsDashboard";
 import AttendanceLiveMonitor from "@/components/admin/AttendanceLiveMonitor";
-import AssistantAccountManager from "@/components/admin/AssistantAccountManager";
-import CourseAssistantManager from "@/components/admin/CourseAssistantManager";
-import CourseScheduleManager from "@/components/admin/CourseScheduleManager";
-import AdminProHome from "@/components/admin/pro/AdminProHome";
-import AdminGlobalSearch from "@/components/admin/pro/AdminGlobalSearch";
-import AdminNotificationCenter from "@/components/admin/pro/AdminNotificationCenter";
-import AdminToast from "@/components/admin/pro/AdminToast";
-import { useAdminConfirm } from "@/components/admin/pro/useAdminConfirm";
-import SemesterArchiveManager from "@/components/admin/academic/SemesterArchiveManager";
-import AuditLogViewer from "@/components/admin/academic/AuditLogViewer";
-import StudentAccountManager from "@/components/admin/academic/StudentAccountManager";
-import AcademicCalendarView from "@/components/admin/academic/AcademicCalendarView";
-import OfficialPrintCenter from "@/components/admin/academic/OfficialPrintCenter";
-import GradeScaleManager from "@/components/admin/academic/GradeScaleManager";
-import {
-  resolveGradeLetter,
-  type GradeLetterScale,
-} from "@/lib/grade-letter";
 
 import type { LecturerAccount } from "@/lib/auth/lecturers";
 
@@ -73,17 +55,6 @@ type Props = {
 
 
 type Tab = "attendance" | "grades" | "students" | "settings";
-type AdminView =
-  | "home"
-  | "workspace"
-  | "analytics"
-  | "calendar"
-  | "print"
-  | "audit"
-  | "archive"
-  | "student_accounts"
-  | "lecturers"
-  | "assistants";
 
 type StatusValue = AttendanceStatus | "";
 
@@ -106,12 +77,6 @@ const emptyCourse: NewCourseForm = {
   academic_year: "2026/2027", meeting_count: 16, min_attendance_pct: 80, start_date: "",
 
 };
-
-function addDays(date: string, days: number) {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
 
 
 
@@ -159,8 +124,6 @@ export default function AdminPanel(props: Props) {
 
   const [grades, setGrades] = useState(props.initialGrades);
 
-  const [gradeScales, setGradeScales] = useState<GradeLetterScale[]>([]);
-
   const [selectedCourseId, setSelectedCourseId] = useState(props.initialCourses[0]?.id ?? "");
 
   const [tab, setTab] = useState<Tab>("attendance");
@@ -183,14 +146,9 @@ export default function AdminPanel(props: Props) {
 
   const [loadingLecturers, setLoadingLecturers] = useState(false);
 
-  const [adminView, setAdminView] = useState<AdminView>("home");
+  const [showLecturerManager, setShowLecturerManager] = useState(false);
 
-  const [toast, setToast] = useState<{
-    message: string;
-    tone: "success" | "error" | "info";
-  }>({ message: "", tone: "info" });
-
-  const { confirm, modal: confirmModal } = useAdminConfirm();
+  const [showAnalytics, setShowAnalytics] = useState(true);
 
   const [courseLecturerUserId, setCourseLecturerUserId] = useState("");
 
@@ -214,13 +172,17 @@ const visibleCourses =
 
 
 
-      return courses.filter((course) => {
-        const archived = Boolean(
-          (course as Course & { is_archived?: boolean }).is_archived,
-        );
+      return courses.filter(
 
-        return !archived && access.canSeeCourse(course.id);
-      });
+        (course) =>
+
+          access.canSeeCourse(
+
+            course.id
+
+          )
+
+      );
 
     },
 
@@ -363,6 +325,12 @@ const canManageSelectedGrades =
 
   });
 
+  const attendanceDirtyRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    attendanceDirtyRef.current.clear();
+  }, [selectedMeetingId]);
+
   const [gradeDraft, setGradeDraft] = useState<Record<string, string>>(() => {
 
     const map: Record<string, string> = {};
@@ -468,38 +436,6 @@ const canManageSelectedGrades =
 
 
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadGradeScales() {
-      if (!selectedCourseId) {
-        setGradeScales([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("grade_letter_scales")
-        .select("*")
-        .eq("course_id", selectedCourseId)
-        .order("sort_order");
-
-      if (!cancelled) {
-        if (error) {
-          console.error("LOAD GRADE SCALES ERROR:", error);
-          setGradeScales([]);
-        } else {
-          setGradeScales((data ?? []) as GradeLetterScale[]);
-        }
-      }
-    }
-
-    void loadGradeScales();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCourseId, supabase]);
-
   const selectedMeeting = courseMeetings.find((m) => m.id === selectedMeetingId);
 
   const gradeMap = buildGradeMap(courseGrades);
@@ -508,30 +444,7 @@ const canManageSelectedGrades =
 
 
 
-  function notify(text: string) {
-    const lower = text.toLowerCase();
-    const tone =
-      lower.includes("gagal") ||
-      lower.includes("harus") ||
-      lower.includes("tidak valid") ||
-      lower.includes("tidak memiliki akses")
-        ? "error"
-        : lower.includes("berhasil") ||
-            lower.includes("diperbarui") ||
-            lower.includes("ditambahkan") ||
-            lower.includes("disimpan")
-          ? "success"
-          : "info";
-
-    setMessage(text);
-    setToast({ message: text, tone });
-  }
-
-  function openCourseWorkspace(courseId: string, nextTab: Tab = "attendance") {
-    chooseCourse(courseId);
-    setTab(nextTab);
-    setAdminView("workspace");
-  }
+  function notify(text: string) { setMessage(text); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
 
 
@@ -596,133 +509,30 @@ const canManageSelectedGrades =
       return;
     }
 
-    const selectedLecturer = lecturers.find(
-      (lecturer) => lecturer.user_id === newCourse.lecturer_user_id,
-    );
-
-    if (!selectedLecturer) {
-      notify("Dosen pengampu tidak ditemukan. Muat ulang daftar dosen lalu coba lagi.");
-      return;
-    }
-
-    const meetingCount = Math.max(1, Math.min(40, Number(newCourse.meeting_count) || 16));
-    const minimumAttendance = Math.max(
-      0,
-      Math.min(100, Number(newCourse.min_attendance_pct) || 80),
-    );
-
     setSaving(true);
     setMessage("");
 
-    let createdCourseId = "";
-
     try {
-      // 1. Buat mata kuliah langsung melalui Supabase.
-      // Tidak lagi menggunakan POST /api/admin/courses sehingga tidak tergantung route API.
-      const { data: createdCourse, error: courseError } = await supabase
-        .from("courses")
-        .insert({
-          name: newCourse.name.trim(),
-          class_name: newCourse.class_name.trim(),
-          lecturer: selectedLecturer.display_name,
-          schedule: newCourse.schedule.trim(),
-          semester: newCourse.semester.trim(),
-          academic_year: newCourse.academic_year.trim(),
-          meeting_count: meetingCount,
-          min_attendance_pct: minimumAttendance,
-          publish_grades: false,
-        })
-        .select("*")
-        .single();
+      const response = await fetch("/api/admin/courses", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(newCourse),
+      });
 
-      if (courseError || !createdCourse) {
-        throw new Error(
-          `Gagal membuat mata kuliah: ${courseError?.message ?? "data course tidak dikembalikan"}`,
-        );
+      const result = await readApiJson(response);
+
+      if (!response.ok) {
+        throw new Error(result.message || "Gagal menambah mata kuliah.");
       }
 
-      const course = createdCourse as Course;
-      createdCourseId = course.id;
-
-      // 2. Assign dosen pengampu ke kelas.
-      const { error: memberError } = await supabase
-        .from("course_members")
-        .upsert(
-          {
-            course_id: course.id,
-            user_id: selectedLecturer.user_id,
-            role: "lecturer",
-          },
-          { onConflict: "course_id,user_id" },
-        );
-
-      if (memberError) {
-        throw new Error(`Gagal memberikan akses kelas ke dosen: ${memberError.message}`);
-      }
-
-      // 3. Buat jadwal mingguan otomatis.
-      const meetingRows = Array.from({ length: meetingCount }, (_, index) => ({
-        course_id: course.id,
-        meeting_no: index + 1,
-        meeting_date: addDays(newCourse.start_date, index * 7),
-      }));
-
-      const { data: createdMeetingsData, error: meetingError } = await supabase
-        .from("meetings")
-        .insert(meetingRows)
-        .select("*");
-
-      if (meetingError) {
-        throw new Error(`Gagal membuat jadwal pertemuan: ${meetingError.message}`);
-      }
-
-      // 4. Buat komponen nilai default.
-      const assessmentRows = [
-        {
-          course_id: course.id,
-          name: "Tugas",
-          category: "Tugas",
-          max_score: 100,
-          weight: 25,
-          sort_order: 1,
-        },
-        {
-          course_id: course.id,
-          name: "Quiz",
-          category: "Quiz",
-          max_score: 100,
-          weight: 15,
-          sort_order: 2,
-        },
-        {
-          course_id: course.id,
-          name: "UTS",
-          category: "UTS",
-          max_score: 100,
-          weight: 25,
-          sort_order: 3,
-        },
-        {
-          course_id: course.id,
-          name: "UAS",
-          category: "UAS",
-          max_score: 100,
-          weight: 35,
-          sort_order: 4,
-        },
-      ];
-
-      const { data: createdAssessmentsData, error: assessmentError } = await supabase
-        .from("assessments")
-        .insert(assessmentRows)
-        .select("*");
-
-      if (assessmentError) {
-        throw new Error(`Gagal membuat komponen nilai: ${assessmentError.message}`);
-      }
-
-      const createdMeetings = (createdMeetingsData ?? []) as Meeting[];
-      const createdAssessments = (createdAssessmentsData ?? []) as Assessment[];
+      const course = result.course as Course;
+      const createdMeetings = (result.meetings ?? []) as Meeting[];
+      const createdAssessments = (result.assessments ?? []) as Assessment[];
 
       setCourses((items) => [...items, course]);
       setMeetings((items) => [...items, ...createdMeetings]);
@@ -730,13 +540,11 @@ const canManageSelectedGrades =
 
       setLecturers((items) =>
         items.map((lecturer) =>
-          lecturer.user_id === selectedLecturer.user_id
+          lecturer.user_id === newCourse.lecturer_user_id
             ? {
                 ...lecturer,
                 course_count: lecturer.course_count + 1,
-                course_ids: lecturer.course_ids.includes(course.id)
-                  ? lecturer.course_ids
-                  : [...lecturer.course_ids, course.id],
+                course_ids: [...lecturer.course_ids, course.id],
               }
             : lecturer,
         ),
@@ -746,26 +554,16 @@ const canManageSelectedGrades =
       setShowAddCourse(false);
       setSelectedCourseId(course.id);
       setCourseDraft(course);
-      setCourseLecturerUserId(selectedLecturer.user_id);
       setTab("attendance");
 
-      const firstMeeting = createdMeetings
-        .slice()
-        .sort((a, b) => a.meeting_no - b.meeting_no)[0]?.id ?? "";
-
+      const firstMeeting = createdMeetings[0]?.id ?? "";
       setSelectedMeetingId(firstMeeting);
       setAttendanceDraft({});
 
       notify(
-        "Mata kuliah berhasil dibuat, jadwal dan komponen nilai dibuat otomatis, serta akses dosen sudah diberikan.",
+        "Mata kuliah berhasil dibuat dan otomatis diberikan kepada dosen pengampu.",
       );
     } catch (error: any) {
-      // Rollback course jika proses turunan gagal. Relasi yang memakai ON DELETE CASCADE
-      // akan ikut dibersihkan oleh database.
-      if (createdCourseId) {
-        await supabase.from("courses").delete().eq("id", createdCourseId);
-      }
-
       notify(error?.message || "Gagal menambah mata kuliah.");
     } finally {
       setSaving(false);
@@ -794,7 +592,9 @@ const canManageSelectedGrades =
 
     if (existingBlankIds.length) await supabase.from("attendance").delete().in("id", existingBlankIds);
 
-    const { data } = await supabase.from("attendance").select("*"); setAttendance((data ?? []) as Attendance[]);
+    const { data } = await supabase.from("attendance").select("*");
+    setAttendance((data ?? []) as Attendance[]);
+    attendanceDirtyRef.current.clear();
 
     notify("Absensi berhasil disimpan."); setSaving(false);
 
@@ -854,32 +654,9 @@ async function refreshStudents() {
 
     if (error || !data) { notify(`Gagal menambah mahasiswa: ${error?.message}`); return; }
 
-    const student = data as Student;
+    const student = data as Student; setStudents((items) => [...items, student]); setAttendanceDraft((d) => ({ ...d, [student.id]: "" }));
 
-    const accountResponse = await fetch("/api/student-accounts/ensure", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        course_id: selectedCourse.id,
-        students: [{ npm: student.npm, name: student.name }],
-      }),
-    });
-
-    const accountResult = await accountResponse
-      .json()
-      .catch(() => ({}));
-
-    setStudents((items) => [...items, student]);
-    setAttendanceDraft((d) => ({ ...d, [student.id]: "" }));
-
-    setNewNpm("");
-    setNewName("");
-
-    notify(
-      accountResponse.ok
-        ? "Mahasiswa berhasil ditambahkan. Akun Student Portal otomatis dibuat dengan password default = NPM."
-        : `Mahasiswa berhasil ditambahkan, tetapi akun Student Portal gagal dibuat: ${accountResult.error ?? "error tidak diketahui"}`,
-    );
+    setNewNpm(""); setNewName(""); notify("Mahasiswa berhasil ditambahkan.");
 
   }
 
@@ -903,13 +680,7 @@ async function refreshStudents() {
   async function deleteStudent(student: Student) {
     if (!canManageSelectedStudents) { notify("Anda tidak memiliki akses untuk menghapus mahasiswa."); return; }
 
-    const approved = await confirm({
-      title: "Hapus mahasiswa?",
-      message: `${student.name} (${student.npm}) akan dihapus beserta data absensi dan nilainya.`,
-      confirmLabel: "Hapus Mahasiswa",
-      danger: true,
-    });
-    if (!approved) return;
+    if (!window.confirm(`Hapus ${student.name} beserta absensi dan nilainya?`)) return;
 
     const { error } = await supabase.from("students").delete().eq("id", student.id); if (error) { notify(`Gagal menghapus: ${error.message}`); return; }
 
@@ -960,13 +731,7 @@ async function refreshStudents() {
   async function deleteAssessment(item: Assessment) {
     if (!canManageSelectedGrades) { notify("Anda tidak memiliki akses untuk menghapus komponen nilai."); return; }
 
-    const approved = await confirm({
-      title: "Hapus komponen nilai?",
-      message: `Komponen ${item.name} beserta seluruh nilai mahasiswa pada komponen ini akan dihapus.`,
-      confirmLabel: "Hapus Komponen",
-      danger: true,
-    });
-    if (!approved) return;
+    if (!window.confirm(`Hapus komponen ${item.name} beserta semua nilainya?`)) return;
 
     const { error } = await supabase.from("assessments").delete().eq("id", item.id); if (error) { notify(`Gagal menghapus: ${error.message}`); return; }
 
@@ -1241,16 +1006,7 @@ async function refreshStudents() {
   async function deleteCourse() {
     if (!access.canDeleteCourse) { notify("Hanya Super Admin yang dapat menghapus kelas."); return; }
 
-    if (!selectedCourse) return;
-
-    const approved = await confirm({
-      title: "Hapus kelas?",
-      message: `${selectedCourse.name} — ${selectedCourse.class_name} beserta mahasiswa, absensi, pertemuan, dan nilai akan dihapus.`,
-      confirmLabel: "Hapus Kelas",
-      danger: true,
-    });
-
-    if (!approved) return;
+    if (!selectedCourse || !window.confirm(`Hapus kelas ${selectedCourse.name} — ${selectedCourse.class_name} beserta seluruh datanya?`)) return;
 
     const { error } = await supabase.from("courses").delete().eq("id", selectedCourse.id); if (error) { notify(`Gagal menghapus kelas: ${error.message}`); return; }
 
@@ -1464,153 +1220,35 @@ async function refreshAttendance() {
 
 </div>
 
-    <div className="admin-pro-topbar">
-      <nav className="admin-pro-main-nav" aria-label="Navigasi Admin">
+    <div
+      style={{
+        marginTop: 16,
+        marginBottom: 18,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 10,
+      }}
+    >
+      <button
+        type="button"
+        className={showAnalytics ? "btn btn-primary" : "btn btn-secondary"}
+        onClick={() => setShowAnalytics((value) => !value)}
+      >
+        {showAnalytics ? "Tutup Dashboard" : "📊 Dashboard Analitik"}
+      </button>
+
+      {access.isSuperAdmin && (
         <button
           type="button"
-          className={adminView === "home" ? "active" : ""}
-          onClick={() => setAdminView("home")}
+          className="btn btn-secondary"
+          onClick={() => setShowLecturerManager((value) => !value)}
         >
-          <span>🏠</span>
-          Beranda
+          {showLecturerManager ? "Tutup Kelola Dosen" : "👨‍🏫 Kelola Dosen & Akun"}
         </button>
-
-        <button
-          type="button"
-          className={adminView === "workspace" ? "active" : ""}
-          onClick={() => setAdminView("workspace")}
-        >
-          <span>📚</span>
-          Kelola Kelas
-        </button>
-
-        <button
-          type="button"
-          className={adminView === "analytics" ? "active" : ""}
-          onClick={() => setAdminView("analytics")}
-        >
-          <span>📊</span>
-          Analitik
-        </button>
-
-        <button
-          type="button"
-          className={adminView === "calendar" ? "active" : ""}
-          onClick={() => setAdminView("calendar")}
-        >
-          <span>🗓️</span>
-          Kalender
-        </button>
-
-        <button
-          type="button"
-          className={adminView === "print" ? "active" : ""}
-          onClick={() => setAdminView("print")}
-        >
-          <span>🖨️</span>
-          Cetak
-        </button>
-
-        <button
-          type="button"
-          className={adminView === "audit" ? "active" : ""}
-          onClick={() => setAdminView("audit")}
-        >
-          <span>🧾</span>
-          Audit
-        </button>
-
-        {access.isSuperAdmin && (
-          <button
-            type="button"
-            className={adminView === "archive" ? "active" : ""}
-            onClick={() => setAdminView("archive")}
-          >
-            <span>🗄️</span>
-            Arsip
-          </button>
-        )}
-
-        {access.isSuperAdmin && (
-          <button
-            type="button"
-            className={adminView === "student_accounts" ? "active" : ""}
-            onClick={() => setAdminView("student_accounts")}
-          >
-            <span>🎓</span>
-            Akun Mhs
-          </button>
-        )}
-
-        {access.isSuperAdmin && (
-          <button
-            type="button"
-            className={adminView === "lecturers" ? "active" : ""}
-            onClick={() => setAdminView("lecturers")}
-          >
-            <span>👨‍🏫</span>
-            Dosen
-          </button>
-        )}
-
-        {access.isSuperAdmin && (
-          <button
-            type="button"
-            className={adminView === "assistants" ? "active" : ""}
-            onClick={() => setAdminView("assistants")}
-          >
-            <span>🧑‍💻</span>
-            Asdos
-          </button>
-        )}
-      </nav>
-
-      <div className="admin-pro-topbar-actions">
-        <AdminGlobalSearch
-          courses={visibleCourses}
-          students={students}
-          onOpen={(courseId, nextTab) =>
-            openCourseWorkspace(courseId, nextTab)
-          }
-        />
-
-        <AdminNotificationCenter
-          courses={visibleCourses}
-          meetings={meetings}
-          attendance={attendance}
-          assessments={assessments}
-          onOpenCourse={(courseId, nextTab) =>
-            openCourseWorkspace(courseId, nextTab)
-          }
-        />
-      </div>
+      )}
     </div>
 
-    {adminView === "home" && (
-      <AdminProHome
-        courses={visibleCourses}
-        students={students.filter((student) =>
-          visibleCourses.some((course) => course.id === student.course_id),
-        )}
-        meetings={meetings.filter((meeting) =>
-          visibleCourses.some((course) => course.id === meeting.course_id),
-        )}
-        attendance={attendance}
-        assessments={assessments}
-        grades={grades}
-        selectedCourseId={selectedCourseId}
-        canCreateCourse={access.canCreateCourse}
-        onSelectCourse={(courseId, nextTab) =>
-          openCourseWorkspace(courseId, nextTab)
-        }
-        onCreateCourse={() => {
-          setShowAddCourse(true);
-          setAdminView("workspace");
-        }}
-      />
-    )}
-
-    {adminView === "analytics" && (
+    {showAnalytics && (
       <AdminAnalyticsDashboard
         courses={visibleCourses}
         students={students}
@@ -1621,42 +1259,7 @@ async function refreshAttendance() {
       />
     )}
 
-    {adminView === "calendar" && (
-      <AcademicCalendarView
-        courses={visibleCourses}
-        onOpenCourse={(courseId) => openCourseWorkspace(courseId, "attendance")}
-      />
-    )}
-
-    {adminView === "print" && (
-      <OfficialPrintCenter courses={visibleCourses} />
-    )}
-
-    {adminView === "audit" && (
-      <AuditLogViewer courses={courses} />
-    )}
-
-    {access.isSuperAdmin && adminView === "archive" && (
-      <SemesterArchiveManager
-        courses={courses as Array<Course & { is_archived?: boolean; archived_at?: string | null }>}
-        onChanged={(updated) => {
-          setCourses((items) => {
-            const exists = items.some((course) => course.id === updated.id);
-            if (!exists) return [...items, updated as Course];
-
-            return items.map((course) =>
-              course.id === updated.id ? ({ ...course, ...updated } as Course) : course,
-            );
-          });
-        }}
-      />
-    )}
-
-    {access.isSuperAdmin && adminView === "student_accounts" && (
-      <StudentAccountManager students={students} />
-    )}
-
-    {access.isSuperAdmin && adminView === "lecturers" && (
+    {access.isSuperAdmin && showLecturerManager && (
       <LecturerManager
         lecturers={lecturers}
         loading={loadingLecturers}
@@ -1670,11 +1273,6 @@ async function refreshAttendance() {
       />
     )}
 
-    {access.isSuperAdmin && adminView === "assistants" && (
-      <AssistantAccountManager />
-    )}
-
-    {adminView === "workspace" && (
     <div className="course-admin-layout">
 
       <aside className="panel course-sidebar"><div className="panel-head"><div><h2>Daftar Kelas</h2><p>{visibleCourses.length} kelas dikelola</p></div>{access.canCreateCourse && <button className="icon-btn" onClick={() => setShowAddCourse((v) => !v)}>＋</button>}</div>
@@ -1779,18 +1377,32 @@ async function refreshAttendance() {
                         ...rows,
                       ]);
 
-                      const nextDraft: Record<string, StatusValue> = {};
-                      courseStudents.forEach((student) => {
-                        nextDraft[student.id] =
-                          rows.find((row) => row.student_id === student.id)?.status ?? "";
+                      setAttendanceDraft((currentDraft) => {
+                        const nextDraft = { ...currentDraft };
+
+                        courseStudents.forEach((student) => {
+                          if (attendanceDirtyRef.current.has(student.id)) {
+                            return;
+                          }
+
+                          nextDraft[student.id] =
+                            rows.find((row) => row.student_id === student.id)?.status ?? "";
+                        });
+
+                        return nextDraft;
                       });
-                      setAttendanceDraft(nextDraft);
                     }}
                   />
                 </div>
               )}
 
-              <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama Mahasiswa</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} disabled={!canManageSelectedAttendance} onChange={(e) => setAttendanceDraft((d) => ({ ...d, [student.id]: e.target.value as StatusValue }))}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((key) => <option key={key} value={key}>{key} — {STATUS_LABELS[key]}</option>)}</select></td></tr>)}</tbody></table>{courseStudents.length === 0 && <div className="empty-state">Tambahkan mahasiswa terlebih dahulu pada tab Mahasiswa.</div>}</div>
+              <div className="table-wrap"><table className="admin-table"><thead><tr><th>No</th><th>NPM</th><th>Nama Mahasiswa</th><th>Status</th></tr></thead><tbody>{courseStudents.map((student, index) => <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td><td><select className="status-select" value={attendanceDraft[student.id] ?? ""} disabled={!canManageSelectedAttendance} onChange={(e) => {
+  attendanceDirtyRef.current.add(student.id);
+  setAttendanceDraft((d) => ({
+    ...d,
+    [student.id]: e.target.value as StatusValue,
+  }));
+}}><option value="">— Belum diisi —</option>{(Object.keys(STATUS_LABELS) as AttendanceStatus[]).map((key) => <option key={key} value={key}>{key} — {STATUS_LABELS[key]}</option>)}</select></td></tr>)}</tbody></table>{courseStudents.length === 0 && <div className="empty-state">Tambahkan mahasiswa terlebih dahulu pada tab Mahasiswa.</div>}</div>
 
             </div></section></div>}
 
@@ -1830,22 +1442,13 @@ async function refreshAttendance() {
 
 )}
 
-            {selectedCourse && (
-              <GradeScaleManager
-                courseId={selectedCourse.id}
-                canEdit={canManageSelectedGrades}
-                scales={gradeScales}
-                onChange={setGradeScales}
-              />
-            )}
-
             {canManageSelectedGrades && <div className="assessment-manager"><div className="inline-form"><div className="field"><label>Nama Komponen</label><input className="input" value={newAssessment.name} onChange={(e) => setNewAssessment({ ...newAssessment, name: e.target.value })} placeholder="Tugas 2" /></div><div className="field small-field"><label>Kategori</label><select className="select" value={newAssessment.category} onChange={(e) => setNewAssessment({ ...newAssessment, category: e.target.value })}><option>Tugas</option><option>Quiz</option><option>UTS</option><option>UAS</option><option>Proyek</option><option>Lainnya</option></select></div><div className="field small-field"><label>Maks.</label><input className="input" type="number" min="1" value={newAssessment.max_score} onChange={(e) => setNewAssessment({ ...newAssessment, max_score: Number(e.target.value) })}/></div><div className="field small-field"><label>Bobot %</label><input className="input" type="number" min="0" max="100" value={newAssessment.weight} onChange={(e) => setNewAssessment({ ...newAssessment, weight: Number(e.target.value) })}/></div><button className="btn btn-secondary" onClick={addAssessment}>Tambah Komponen</button></div>
 
               <div className="assessment-chips">{courseAssessments.map((item) => <div className="assessment-chip" key={item.id}><span><strong>{item.name}</strong><small>{item.category} · maks {item.max_score} · {item.weight}%</small></span><button onClick={() => editAssessment(item)}>Edit</button><button className="danger-link" onClick={() => deleteAssessment(item)}>Hapus</button></div>)}</div>
 
             </div>}
 
-            <div className="table-wrap"><table className="admin-table grade-input-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{courseAssessments.map((item) => <th key={item.id}>{item.name}<small>Maks {item.max_score}</small></th>)}<th>Nilai Akhir</th><th>Huruf Mutu</th></tr></thead><tbody>{courseStudents.map((student, index) => { const final = calculateFinalScore(student.id, courseAssessments, gradeMap); const letter = resolveGradeLetter(final.score, gradeScales); return <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td>{courseAssessments.map((item) => { const key = `${item.id}:${student.id}`; const initialValue = gradeDraft[key] ?? (gradeMap.has(key) ? String(gradeMap.get(key)) : ""); return <td key={item.id}><input className="score-input" type="number" min="0" max={item.max_score} step="0.01" value={initialValue} disabled={!canManageSelectedGrades} onChange={(e) => setGradeDraft((d) => ({ ...d, [key]: e.target.value }))}/></td>; })}<td><strong>{final.score.toFixed(2)}</strong></td><td><span className="badge good">{letter}</span></td></tr>; })}</tbody></table></div>
+            <div className="table-wrap"><table className="admin-table grade-input-table"><thead><tr><th>No</th><th>NPM</th><th>Nama</th>{courseAssessments.map((item) => <th key={item.id}>{item.name}<small>Maks {item.max_score}</small></th>)}<th>Nilai Akhir</th></tr></thead><tbody>{courseStudents.map((student, index) => { const final = calculateFinalScore(student.id, courseAssessments, gradeMap); return <tr key={student.id}><td>{index + 1}</td><td>{student.npm}</td><td><strong>{student.name}</strong></td>{courseAssessments.map((item) => { const key = `${item.id}:${student.id}`; const initialValue = gradeDraft[key] ?? (gradeMap.has(key) ? String(gradeMap.get(key)) : ""); return <td key={item.id}><input className="score-input" type="number" min="0" max={item.max_score} step="0.01" value={initialValue} disabled={!canManageSelectedGrades} onChange={(e) => setGradeDraft((d) => ({ ...d, [key]: e.target.value }))}/></td>; })}<td><strong>{final.score.toFixed(2)}</strong></td></tr>; })}</tbody></table></div>
 
             <div className="save-row"><span className="muted">Pastikan total bobot idealnya 100%.</span><button className="btn btn-primary" onClick={saveGrades} disabled={saving || !canManageSelectedGrades}>{saving ? "Menyimpan..." : "Simpan Semua Nilai"}</button></div>
 
@@ -2069,43 +1672,23 @@ async function refreshAttendance() {
 
 
 
-          {tab === "settings" && <section className="panel">
-            <div className="panel-head"><div><h2>Pengaturan Kelas</h2><p>Ubah identitas, publikasi nilai, dan Asisten Dosen.</p></div></div>
-            <div className="panel-body form-grid-3">
-              <div className="field"><label>Mata Kuliah</label><input className="input" value={String(courseDraft.name ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, name: e.target.value })}/></div>
-              <div className="field"><label>Kelas</label><input className="input" value={String(courseDraft.class_name ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, class_name: e.target.value })}/></div>
-              <div className="field"><label>Dosen Pengampu</label>{access.isSuperAdmin ? <select className="select" value={courseLecturerUserId} onChange={(e) => setCourseLecturerUserId(e.target.value)}><option value="">— Pilih Dosen —</option>{lecturers.filter((lecturer) => lecturer.role === "lecturer").map((lecturer) => <option key={lecturer.user_id} value={lecturer.user_id}>{lecturer.display_name}{lecturer.email ? ` — ${lecturer.email}` : ""}</option>)}</select> : <input className="input" value={String(courseDraft.lecturer ?? "")} disabled />}</div>
-              <div className="field"><label>Ringkasan Jadwal</label><input className="input" value={String(courseDraft.schedule ?? "") || "Belum ada jadwal"} disabled /></div>
-              <div className="field"><label>Semester</label><input className="input" value={String(courseDraft.semester ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, semester: e.target.value })}/></div>
-              <div className="field"><label>Tahun Akademik</label><input className="input" value={String(courseDraft.academic_year ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, academic_year: e.target.value })}/></div>
-              <div className="field"><label>Batas Kehadiran (%)</label><input className="input" type="number" min="0" max="100" value={Number(courseDraft.min_attendance_pct ?? 80)} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, min_attendance_pct: Number(e.target.value) })}/></div>
-              <div className="field checkbox-field"><label><input type="checkbox" checked={Boolean(courseDraft.publish_grades)} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, publish_grades: e.target.checked })}/> Publikasikan nilai di halaman Rekap</label><small>Jika mati, nilai hanya dapat dilihat admin.</small></div>
-              <div className="form-actions-full">{canEditSelectedCourse && <button className="btn btn-primary" onClick={saveCourseSettings} disabled={saving}>{saving ? "Menyimpan..." : "Simpan Pengaturan"}</button>}{access.canDeleteCourse && <button className="btn btn-danger" onClick={deleteCourse}>Hapus Kelas</button>}</div>
-              {canEditSelectedCourse && selectedCourse && (
-                <CourseScheduleManager
-                  courseId={selectedCourse.id}
-                  meetingCount={selectedCourse.meeting_count}
-                />
-              )}
-              {canEditSelectedCourse && selectedCourse && <CourseAssistantManager courseId={selectedCourse.id} />}
-            </div>
-          </section>}
+          {tab === "settings" && <section className="panel"><div className="panel-head"><div><h2>Pengaturan Kelas</h2><p>Ubah identitas dan publikasi nilai.</p></div></div><div className="panel-body form-grid-3">
+
+            <div className="field"><label>Mata Kuliah</label><input className="input" value={String(courseDraft.name ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, name: e.target.value })}/></div><div className="field"><label>Kelas</label><input className="input" value={String(courseDraft.class_name ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, class_name: e.target.value })}/></div><div className="field"><label>Dosen Pengampu</label>{access.isSuperAdmin ? <select className="select" value={courseLecturerUserId} onChange={(e) => setCourseLecturerUserId(e.target.value)}><option value="">— Pilih Dosen —</option>{lecturers.filter((lecturer) => lecturer.role === "lecturer").map((lecturer) => <option key={lecturer.user_id} value={lecturer.user_id}>{lecturer.display_name}{lecturer.email ? ` — ${lecturer.email}` : ""}</option>)}</select> : <input className="input" value={String(courseDraft.lecturer ?? "")} disabled />}</div>
+
+            <div className="field"><label>Jadwal</label><input className="input" value={String(courseDraft.schedule ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, schedule: e.target.value })}/></div><div className="field"><label>Semester</label><input className="input" value={String(courseDraft.semester ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, semester: e.target.value })}/></div><div className="field"><label>Tahun Akademik</label><input className="input" value={String(courseDraft.academic_year ?? "")} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, academic_year: e.target.value })}/></div>
+
+            <div className="field"><label>Batas Kehadiran (%)</label><input className="input" type="number" min="0" max="100" value={Number(courseDraft.min_attendance_pct ?? 80)} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, min_attendance_pct: Number(e.target.value) })}/></div><div className="field checkbox-field"><label><input type="checkbox" checked={Boolean(courseDraft.publish_grades)} disabled={!canEditSelectedCourse} onChange={(e) => setCourseDraft({ ...courseDraft, publish_grades: e.target.checked })}/> Publikasikan nilai di halaman Rekap</label><small>Jika mati, nilai hanya dapat dilihat admin.</small></div>
+
+            <div className="form-actions-full">{canEditSelectedCourse && <button className="btn btn-primary" onClick={saveCourseSettings} disabled={saving}>{saving ? "Menyimpan..." : "Simpan Pengaturan"}</button>}{access.canDeleteCourse && <button className="btn btn-danger" onClick={deleteCourse}>Hapus Kelas</button>}</div>
+
+          </div></section>}
 
         </> : !showAddCourse && <div className="setup-box"><h2>Pilih Kelas</h2><p className="muted">Gunakan daftar kelas di sebelah kiri. Jika kosong, akun belum ditugaskan ke kelas.</p></div>}
 
       </div>
 
     </div>
-
-    )}
-
-    <AdminToast
-      message={toast.message}
-      tone={toast.tone}
-      onClose={() => setToast((current) => ({ ...current, message: "" }))}
-    />
-
-    {confirmModal}
 
   </div></section>;
 
