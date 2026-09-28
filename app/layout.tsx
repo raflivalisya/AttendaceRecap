@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./uiux-overhaul.css";
-import SiteChrome from "@/components/ui/SiteChrome";
 
 export const metadata: Metadata = {
   title: {
@@ -19,9 +18,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
-      <body>
-        <SiteChrome>{children}</SiteChrome>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
