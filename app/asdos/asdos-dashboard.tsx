@@ -53,6 +53,14 @@ function periodLabel(start: string, end: string) {
   return `${formatPeriodDate(start)} s.d. ${formatPeriodDate(end)}`;
 }
 
+function isMonthValue(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}$/.test(value);
+}
+
+function isDateValue(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 export default function AsdosDashboard(props: Props) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -71,6 +79,7 @@ export default function AsdosDashboard(props: Props) {
   const initialPeriod = periodForMonth(currentMonth());
   const [periodStart, setPeriodStart] = useState(initialPeriod.start);
   const [periodEnd, setPeriodEnd] = useState(initialPeriod.end);
+  const [periodStorageReady, setPeriodStorageReady] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -80,6 +89,69 @@ export default function AsdosDashboard(props: Props) {
   const [manual, setManual] = useState({ course_id: "", activity_date: "", start_time: "", end_time: "", room: "", material: "", activity_type: "Mengajar", notes: "" });
   const [newNpm, setNewNpm] = useState("");
   const [newStudentName, setNewStudentName] = useState("");
+
+  /*
+   * Simpan periode rekap terakhir per akun Asdos.
+   * Sebelumnya periodStart/periodEnd hanya React state sehingga
+   * selalu kembali ke periode default setelah refresh halaman.
+   */
+  useEffect(() => {
+    const storageKey = `asdos-recap-period:${props.profile.user_id}`;
+
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+
+      if (raw) {
+        const saved = JSON.parse(raw) as {
+          month?: unknown;
+          start?: unknown;
+          end?: unknown;
+        };
+
+        if (
+          isMonthValue(saved.month) &&
+          isDateValue(saved.start) &&
+          isDateValue(saved.end) &&
+          saved.start <= saved.end
+        ) {
+          setMonth(saved.month);
+          setPeriodStart(saved.start);
+          setPeriodEnd(saved.end);
+        }
+      }
+    } catch (error) {
+      console.warn("Gagal memulihkan periode rekap Asdos:", error);
+    } finally {
+      setPeriodStorageReady(true);
+    }
+  }, [props.profile.user_id]);
+
+  useEffect(() => {
+    if (!periodStorageReady) return;
+    if (!isMonthValue(month) || !isDateValue(periodStart) || !isDateValue(periodEnd)) return;
+    if (periodStart > periodEnd) return;
+
+    const storageKey = `asdos-recap-period:${props.profile.user_id}`;
+
+    try {
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          month,
+          start: periodStart,
+          end: periodEnd,
+        }),
+      );
+    } catch (error) {
+      console.warn("Gagal menyimpan periode rekap Asdos:", error);
+    }
+  }, [
+    month,
+    periodStart,
+    periodEnd,
+    periodStorageReady,
+    props.profile.user_id,
+  ]);
 
   const selectedCourse = courses.find((course) => course.id === selectedCourseId);
   const courseStudents = students.filter((student) => student.course_id === selectedCourseId);
@@ -164,30 +236,11 @@ export default function AsdosDashboard(props: Props) {
       return;
     }
 
-    const accountResponse = await fetch("/api/student-accounts/ensure", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        course_id: selectedCourseId,
-        students: [{ npm: created.npm, name: created.name }],
-      }),
-    });
-
-    const accountResult = await accountResponse
-      .json()
-      .catch(() => ({}));
-
     setStudents((items) => [...items, created as Student].sort((a, b) => a.npm.localeCompare(b.npm)));
     setAttendanceDraft((current) => ({ ...current, [created.id]: "" }));
     setNewNpm("");
     setNewStudentName("");
-
-    notify(
-      accountResponse.ok
-        ? `${String(created.name)} berhasil ditambahkan. Akun Student Portal siap dengan password default = NPM.`
-        : `${String(created.name)} berhasil ditambahkan, tetapi akun Student Portal gagal dibuat: ${accountResult.error ?? "error tidak diketahui"}`,
-    );
-
+    notify(`${String(created.name)} berhasil ditambahkan ke kelas.`);
     setSaving(false);
   }
 
@@ -335,16 +388,15 @@ export default function AsdosDashboard(props: Props) {
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) { notify(result.error ?? "Gagal menyimpan jadwal."); setImporting(false); return; }
-    const [{ data }, { data: sharedData }] = await Promise.all([
-      supabase.from("assistant_schedule_templates").select("*").eq("assistant_user_id", props.profile.user_id).order("weekday").order("start_time"),
-      courses.length
-        ? supabase.from("course_schedules").select("*").in("course_id", courses.map((course) => course.id)).order("weekday").order("start_time")
-        : Promise.resolve({ data: [] }),
-    ]);
+    const { data } = await supabase
+      .from("assistant_schedule_templates")
+      .select("*")
+      .eq("assistant_user_id", props.profile.user_id)
+      .order("weekday")
+      .order("start_time");
     setSchedules((data ?? []) as AssistantScheduleTemplate[]);
-    setCourseSchedules((sharedData ?? []) as CourseScheduleSlot[]);
     setPreview([]);
-    notify(`${result.imported_count ?? 0} jadwal berhasil disimpan.`);
+    notify(`${result.imported_count ?? 0} jadwal Excel berhasil disimpan sebagai jadwal pribadi Asdos.`);
     setImporting(false);
     setTab("schedule");
   }
@@ -383,29 +435,6 @@ export default function AsdosDashboard(props: Props) {
       return;
     }
 
-    if (schedule.course_id) {
-      await supabase
-        .from("course_schedules")
-        .delete()
-        .eq("course_id", schedule.course_id)
-        .eq("weekday", schedule.weekday)
-        .eq("start_time", schedule.start_time)
-        .eq("end_time", schedule.end_time)
-        .eq("source_assistant_user_id", props.profile.user_id);
-
-      setCourseSchedules((items) =>
-        items.filter(
-          (item) =>
-            !(
-              item.course_id === schedule.course_id &&
-              item.weekday === schedule.weekday &&
-              item.start_time.slice(0, 5) === schedule.start_time.slice(0, 5) &&
-              item.end_time.slice(0, 5) === schedule.end_time.slice(0, 5) &&
-              item.source_assistant_user_id === props.profile.user_id
-            ),
-        ),
-      );
-    }
 
     setSchedules((items) => items.filter((item) => item.id !== schedule.id));
     setLogs((items) =>
@@ -448,12 +477,6 @@ export default function AsdosDashboard(props: Props) {
       .from("assistant_schedule_templates")
       .delete()
       .eq("assistant_user_id", props.profile.user_id)
-      .eq("source_filename", filename);
-
-    await supabase
-      .from("course_schedules")
-      .delete()
-      .eq("source_assistant_user_id", props.profile.user_id)
       .eq("source_filename", filename);
 
     if (error) {
@@ -512,15 +535,6 @@ export default function AsdosDashboard(props: Props) {
       return;
     }
 
-    await supabase
-      .from("course_schedules")
-      .delete()
-      .eq("source_assistant_user_id", props.profile.user_id);
-
-    setCourseSchedules((items) =>
-      items.filter((item) => item.source_assistant_user_id !== props.profile.user_id),
-    );
-
     const idSet = new Set(ids);
     setSchedules([]);
     setLogs((items) =>
@@ -545,6 +559,20 @@ export default function AsdosDashboard(props: Props) {
   async function generateMonth() {
     if (!periodStart || !periodEnd) { notify("Tanggal mulai dan tanggal akhir wajib diisi."); return; }
     if (periodStart > periodEnd) { notify("Tanggal mulai tidak boleh lebih besar dari tanggal akhir."); return; }
+
+    try {
+      window.localStorage.setItem(
+        `asdos-recap-period:${props.profile.user_id}`,
+        JSON.stringify({
+          month,
+          start: periodStart,
+          end: periodEnd,
+        }),
+      );
+    } catch {
+      // Generate tetap berjalan walau browser memblokir localStorage.
+    }
+
     setSaving(true);
     const response = await fetch("/api/asdos/generate-month", {
       method: "POST",
@@ -554,7 +582,7 @@ export default function AsdosDashboard(props: Props) {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) { notify(result.error ?? "Gagal membuat rekap periode."); setSaving(false); return; }
     setLogs(result.logs ?? []);
-    notify(`Rekap ${periodLabel(periodStart, periodEnd)} berhasil dibuat dari jadwal.`);
+    notify(`Rekap ${periodLabel(periodStart, periodEnd)} berhasil dibuat dari seluruh jadwal Excel Asdos.`);
     setSaving(false);
     setTab("recap");
   }
@@ -737,7 +765,7 @@ export default function AsdosDashboard(props: Props) {
 
         {tab === "schedule" && <section className="panel">
           <div className="panel-head">
-            <div><h2>Jadwal Asistensi</h2><p>Jadwal utama di bawah ini sama dengan jadwal yang diatur Dosen/Admin. Import Excel yang cocok dengan kelas akan ikut memperbarui sumber jadwal yang sama.</p></div>
+            <div><h2>Jadwal Asistensi</h2><p>Jadwal pribadi Asdos dari Excel. Tidak wajib cocok dengan mata kuliah atau dosen yang terdaftar di website. Semua jadwal di tabel ini dipakai untuk Rekap Kehadiran Asdos.</p></div>
             <div className="admin-actions">
               <button className="btn btn-secondary" onClick={() => setTab("import")}>Import Excel</button>
               {schedules.length > 0 && <button className="btn btn-danger" onClick={deleteAllSchedules} disabled={saving}>Hapus Semua Jadwal</button>}
@@ -752,8 +780,8 @@ export default function AsdosDashboard(props: Props) {
                 <div className="field"><label>Tanggal Akhir</label><input className="input" type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} /></div>
               </div>
               <div className="save-row" style={{ marginTop: 12 }}>
-                <span className="muted">Default periode: tanggal 26 bulan sebelumnya s.d. tanggal 24 bulan yang dipilih. Tanggal tetap bisa diubah manual.</span>
-                <button className="btn btn-primary" onClick={generateMonth} disabled={saving}>{saving ? "Membuat..." : "Generate Rekap dari Jadwal"}</button>
+                <span className="muted">Rekap dibuat dari semua jadwal Excel di tabel ini, termasuk mata kuliah yang tidak terdaftar di website.</span>
+                <button className="btn btn-primary" onClick={generateMonth} disabled={saving}>{saving ? "Membuat..." : "Generate Rekap dari Jadwal Excel"}</button>
               </div>
             </div>
 
@@ -769,13 +797,13 @@ export default function AsdosDashboard(props: Props) {
               </div>
             )}
 
-            <div className="table-wrap"><table className="admin-table"><thead><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Mata Kuliah</th><th>Dosen</th><th>Ruang</th><th>Sumber</th><th>Link DB</th><th>Aksi</th></tr></thead><tbody>{schedules.map((schedule) => <tr key={schedule.id}><td>{schedule.day_name}</td><td>{schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</td><td>{schedule.class_label}</td><td><strong>{schedule.course_name}</strong></td><td>{schedule.lecturer_name}</td><td>{schedule.room || "—"}</td><td>{schedule.source_filename || "Manual"}</td><td><span className={`badge ${schedule.course_id ? "good" : "warn"}`}>{schedule.course_id ? "Terhubung" : "Belum cocok"}</span></td><td><button className="btn btn-danger btn-small" onClick={() => deleteSchedule(schedule)} disabled={saving}>Hapus</button></td></tr>)}</tbody></table>{schedules.length === 0 && <div className="empty-state">Belum ada jadwal. Gunakan Import Excel.</div>}</div>
+            <div className="table-wrap"><table className="admin-table"><thead><tr><th>Hari</th><th>Jam</th><th>Kelas</th><th>Mata Kuliah</th><th>Dosen</th><th>Ruang</th><th>Sumber</th><th>Aksi</th></tr></thead><tbody>{schedules.map((schedule) => <tr key={schedule.id}><td>{schedule.day_name}</td><td>{schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</td><td>{schedule.class_label}</td><td><strong>{schedule.course_name}</strong></td><td>{schedule.lecturer_name}</td><td>{schedule.room || "—"}</td><td>{schedule.source_filename || "Manual"}</td><td><button className="btn btn-danger btn-small" onClick={() => deleteSchedule(schedule)} disabled={saving}>Hapus</button></td></tr>)}</tbody></table>{schedules.length === 0 && <div className="empty-state">Belum ada jadwal. Gunakan Import Excel.</div>}</div>
           </div>
         </section>}
 
         {tab === "recap" && <section className="panel">
           <div className="panel-head">
-            <div><h2>Rekap Kehadiran Asdos</h2><p>Hanya kegiatan pada tanggal mulai–akhir yang dipilih yang ditampilkan dan dicetak.</p></div>
+            <div><h2>Rekap Kehadiran Asdos</h2><p>Rekap dibuat dari seluruh jadwal Excel pribadi Asdos pada rentang tanggal yang dipilih. Tidak membutuhkan Link DB.</p></div>
             <div className="admin-actions"><Link className="btn btn-primary" href={`/asdos/print?month=${month}&start=${periodStart}&end=${periodEnd}`} target="_blank">🖨 Print Rekap</Link></div>
           </div>
           <div className="panel-body">
