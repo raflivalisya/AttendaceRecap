@@ -27,51 +27,94 @@ function makeLocationError(message: string, reason: LocationFailureReason): Loca
   return error;
 }
 
-function readPosition(options: PositionOptions): Promise<LocationData> {
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
+function locationFailureFromBrowser(error: GeolocationPositionError): LocationFailure {
+  if (error.code === error.PERMISSION_DENIED) {
+    return makeLocationError(
+      "Izin lokasi ditolak. Di Safari buka menu halaman → Website Settings → Location → Allow, lalu coba lagi.",
+      "permission",
+    );
+  }
+  if (error.code === error.POSITION_UNAVAILABLE) {
+    return makeLocationError(
+      "Lokasi belum tersedia. Pastikan Location Services dan Precise Location aktif, lalu coba di area yang lebih terbuka.",
+      "unavailable",
+    );
+  }
+  if (error.code === error.TIMEOUT) {
+    return makeLocationError("GPS terlalu lama merespons. Coba lagi beberapa detik kemudian.", "timeout");
+  }
+  return makeLocationError("Gagal membaca lokasi perangkat.", "unavailable");
+}
+
+function geolocationReady(): LocationFailure | null {
+  if (typeof window !== "undefined" && !window.isSecureContext && location.hostname !== "localhost") {
+    return makeLocationError(
+      "Akses GPS membutuhkan HTTPS. Buka halaman presensi dari alamat HTTPS Vercel.",
+      "insecure",
+    );
+  }
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return makeLocationError("Browser ini tidak mendukung GPS. Buka link langsung menggunakan Safari terbaru.", "unsupported");
+  }
+  return null;
+}
+
+/**
+ * Penting untuk Safari iOS: pemanggilan pertama getCurrentPosition dilakukan langsung
+ * dari event tap pengguna. Jangan menaruh await/fetch sebelum pemanggilan ini.
+ */
+function requestInitialPosition(
+  onSuccess: (location: LocationData) => void,
+  onError: (error: LocationFailure) => void,
+) {
+  const readinessError = geolocationReady();
+  if (readinessError) {
+    onError(readinessError);
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      onSuccess({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy,
-      }),
-      (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          reject(makeLocationError("Izin lokasi ditolak. Buka pengaturan situs Safari → Location → Allow, lalu coba lagi.", "permission"));
-        } else if (error.code === error.POSITION_UNAVAILABLE) {
-          reject(makeLocationError("Lokasi belum tersedia. Aktifkan Location Services dan Precise Location, lalu coba di area yang lebih terbuka.", "unavailable"));
-        } else if (error.code === error.TIMEOUT) {
-          reject(makeLocationError("GPS terlalu lama merespons. Tunggu beberapa detik lalu coba lagi.", "timeout"));
-        } else {
-          reject(makeLocationError("Gagal membaca lokasi perangkat.", "unavailable"));
-        }
-      },
-      options,
-    );
-  });
+      });
+    },
+    (error) => onError(locationFailureFromBrowser(error)),
+    {
+      enableHighAccuracy: false,
+      timeout: 20_000,
+      maximumAge: 30_000,
+    },
+  );
 }
 
-async function getLocation(): Promise<LocationData> {
-  if (typeof window !== "undefined" && !window.isSecureContext && location.hostname !== "localhost") {
-    throw makeLocationError("Akses GPS membutuhkan koneksi HTTPS. Buka kembali QR dari alamat HTTPS aplikasi.", "insecure");
-  }
-  if (typeof navigator === "undefined" || !navigator.geolocation) {
-    throw makeLocationError("Browser ini tidak mendukung akses lokasi. Gunakan Safari/Chrome terbaru.", "unsupported");
+function requestPrecisePosition(
+  onSuccess: (location: LocationData) => void,
+  onError?: (error: LocationFailure) => void,
+) {
+  const readinessError = geolocationReady();
+  if (readinessError) {
+    onError?.(readinessError);
+    return;
   }
 
-  // Safari iOS lebih stabil jika izin/lokasi awal diminta tanpa high-accuracy terlebih dahulu.
-  // Setelah itu, coba tingkatkan akurasi. Jika percobaan presisi timeout, lokasi awal tetap
-  // dikirim ke server dan server tetap menjadi penentu akhir radius/akurasi.
-  const initial = await readPosition({ enableHighAccuracy: false, timeout: 15_000, maximumAge: 60_000 });
-
-  try {
-    const precise = await readPosition({ enableHighAccuracy: true, timeout: 30_000, maximumAge: 0 });
-    return precise.accuracy <= initial.accuracy ? precise : initial;
-  } catch (error) {
-    const failure = error as LocationFailure;
-    if (failure.reason === "permission") throw failure;
-    return initial;
-  }
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      onSuccess({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      });
+    },
+    (error) => onError?.(locationFailureFromBrowser(error)),
+    {
+      enableHighAccuracy: true,
+      timeout: 35_000,
+      maximumAge: 0,
+    },
+  );
 }
 
 function permissionLabel(state: PermissionStateValue) {
@@ -84,6 +127,7 @@ function permissionLabel(state: PermissionStateValue) {
 export default function PresensiForm({ token, initialInfo }: Props) {
   const [npm, setNpm] = useState("");
   const [loading, setLoading] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [message, setMessage] = useState("");
   const [permission, setPermission] = useState<PermissionStateValue>("unknown");
@@ -99,48 +143,44 @@ export default function PresensiForm({ token, initialInfo }: Props) {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    let permissionStatus: PermissionStatus | null = null;
-    let active = true;
-
-    async function readPermission() {
-      try {
-        if (!navigator.permissions?.query) return;
-        permissionStatus = await navigator.permissions.query({ name: "geolocation" });
-        if (!active) return;
-        setPermission(permissionStatus.state as PermissionStateValue);
-        permissionStatus.onchange = () => setPermission(permissionStatus?.state as PermissionStateValue);
-      } catch {
-        setPermission("unknown");
-      }
-    }
-
-    void readPermission();
-    return () => {
-      active = false;
-      if (permissionStatus) permissionStatus.onchange = null;
-    };
-  }, []);
-
   const remainingSeconds = Math.max(0, Math.ceil((new Date(initialInfo.endsAt).getTime() - now) / 1000));
   const remainingText = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
 
-  async function testLocation() {
-    setMessage("Memeriksa GPS…");
-    try {
-      const location = await getLocation();
-      setLocationPreview(location);
-      setPermission("granted");
-      setMessage(`GPS siap. Akurasi saat ini ±${Math.round(location.accuracy)} meter.`);
-    } catch (error) {
-      setLocationPreview(null);
-      const failure = error as LocationFailure;
-      if (failure.reason === "permission") setPermission("denied");
-      setMessage(error instanceof Error ? error.message : "Gagal membaca GPS.");
-    }
+  function testLocation() {
+    if (gpsLoading || loading) return;
+
+    setGpsLoading(true);
+    setMessage("Meminta izin lokasi dari Safari…");
+
+    // Panggilan ini sengaja langsung dari event tap untuk kompatibilitas Safari iPhone.
+    requestInitialPosition(
+      (initial) => {
+        setLocationPreview(initial);
+        setPermission("granted");
+        setGpsLoading(false);
+        setMessage(`GPS aktif. Akurasi awal ±${Math.round(initial.accuracy)} meter. Mencoba meningkatkan akurasi…`);
+
+        // Peningkatan akurasi dilakukan setelah izin berhasil. Gagal di tahap ini tidak
+        // membatalkan GPS awal yang sudah valid.
+        requestPrecisePosition((precise) => {
+          setLocationPreview((current) => {
+            if (!current || precise.accuracy < current.accuracy) return precise;
+            return current;
+          });
+          setMessage(`GPS siap. Akurasi ±${Math.round(precise.accuracy)} meter.`);
+        });
+      },
+      (failure) => {
+        setGpsLoading(false);
+        setLocationPreview(null);
+        if (failure.reason === "permission") setPermission("denied");
+        else setPermission("unknown");
+        setMessage(failure.message);
+      },
+    );
   }
 
-  async function kirimPresensi() {
+  function kirimPresensi() {
     if (loading || success) return;
     const cleanNpm = npm.trim();
     if (!/^[A-Za-z0-9._-]{4,32}$/.test(cleanNpm)) {
@@ -154,55 +194,85 @@ export default function PresensiForm({ token, initialInfo }: Props) {
 
     setLoading(true);
     setDetail(null);
-    setMessage("Meminta lokasi GPS presisi…");
+    setMessage("Meminta izin lokasi dari perangkat…");
 
-    try {
-      const location = await getLocation();
-      setLocationPreview(location);
-      setPermission("granted");
-      setMessage(`GPS ditemukan (±${Math.round(location.accuracy)} m). Mengirim presensi…`);
+    // Sama seperti Tes GPS: harus dipanggil langsung dari tap pengguna untuk Safari iOS.
+    requestInitialPosition(
+      (initialLocation) => {
+        setPermission("granted");
+        setLocationPreview(initialLocation);
+        setMessage(`GPS ditemukan (±${Math.round(initialLocation.accuracy)} m). Mengirim presensi…`);
 
-      const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 20_000);
-      try {
-        const response = await fetch(`/api/presensi/${encodeURIComponent(token)}`, {
-          method: "POST",
-          cache: "no-store",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({
-            npm: cleanNpm,
-            latitude: location.latitude,
-            longitude: location.longitude,
-            accuracy: location.accuracy,
-          }),
-          signal: controller.signal,
-        });
+        // Jangan menahan pengiriman terlalu lama. Coba posisi presisi, tetapi bila Safari
+        // tidak segera mendapatkannya gunakan posisi awal; server tetap memvalidasi radius.
+        let submitted = false;
 
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.message || `Presensi gagal (${response.status}).`);
+        const submit = async (location: LocationData) => {
+          if (submitted) return;
+          submitted = true;
+          setLocationPreview(location);
 
-        setSuccess(true);
-        setMessage(result.message || "Presensi berhasil.");
-        setDetail({
-          name: result.student?.name,
-          distance: typeof result.distance === "number" ? result.distance : null,
-          accuracy: typeof result.accuracy === "number" ? result.accuracy : null,
-        });
-      } finally {
-        window.clearTimeout(timeout);
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setMessage("Server terlalu lama merespons. Coba lagi atau scan ulang QR jika sesi hampir habis.");
-      } else {
-        const failure = error as LocationFailure;
+          const controller = new AbortController();
+          const timeout = window.setTimeout(() => controller.abort(), 20_000);
+          try {
+            const response = await fetch(`/api/presensi/${encodeURIComponent(token)}`, {
+              method: "POST",
+              cache: "no-store",
+              credentials: "include",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              body: JSON.stringify({
+                npm: cleanNpm,
+                latitude: location.latitude,
+                longitude: location.longitude,
+                accuracy: location.accuracy,
+              }),
+              signal: controller.signal,
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.message || `Presensi gagal (${response.status}).`);
+
+            setSuccess(true);
+            setMessage(result.message || "Presensi berhasil.");
+            setDetail({
+              name: result.student?.name,
+              distance: typeof result.distance === "number" ? result.distance : null,
+              accuracy: typeof result.accuracy === "number" ? result.accuracy : null,
+            });
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") {
+              setMessage("Server terlalu lama merespons. Coba lagi atau scan ulang QR jika sesi hampir habis.");
+            } else {
+              setMessage(error instanceof Error ? error.message : "Presensi gagal.");
+            }
+          } finally {
+            window.clearTimeout(timeout);
+            setLoading(false);
+          }
+        };
+
+        // Beri Safari kesempatan singkat untuk mendapatkan koordinat yang lebih presisi.
+        const fallbackTimer = window.setTimeout(() => void submit(initialLocation), 2500);
+        requestPrecisePosition(
+          (precise) => {
+            window.clearTimeout(fallbackTimer);
+            const best = precise.accuracy <= initialLocation.accuracy ? precise : initialLocation;
+            void submit(best);
+          },
+          () => {
+            window.clearTimeout(fallbackTimer);
+            void submit(initialLocation);
+          },
+        );
+      },
+      (failure) => {
+        setLoading(false);
+        setLocationPreview(null);
         if (failure.reason === "permission") setPermission("denied");
-        setMessage(error instanceof Error ? error.message : "Presensi gagal.");
-      }
-    } finally {
-      setLoading(false);
-    }
+        else setPermission("unknown");
+        setMessage(failure.message);
+      },
+    );
   }
 
   return (
@@ -238,8 +308,8 @@ export default function PresensiForm({ token, initialInfo }: Props) {
                 </div>
               </div>
               {!success && (
-                <button type="button" className="btn btn-secondary btn-small" onClick={() => void testLocation()} disabled={loading}>
-                  Tes GPS
+                <button type="button" className="btn btn-secondary btn-small" onClick={testLocation} disabled={loading || gpsLoading}>
+                  {gpsLoading ? "Meminta GPS…" : "Tes GPS"}
                 </button>
               )}
             </div>
@@ -260,12 +330,12 @@ export default function PresensiForm({ token, initialInfo }: Props) {
                     disabled={loading}
                     maxLength={32}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") void kirimPresensi();
+                      if (event.key === "Enter") kirimPresensi();
                     }}
                   />
                 </div>
 
-                <button type="button" className="btn btn-primary presensi-submit" disabled={loading || remainingSeconds <= 0} onClick={() => void kirimPresensi()}>
+                <button type="button" className="btn btn-primary presensi-submit" disabled={loading || remainingSeconds <= 0} onClick={kirimPresensi}>
                   {loading ? "Memeriksa & Mengirim…" : "Kirim Presensi"}
                 </button>
               </>
