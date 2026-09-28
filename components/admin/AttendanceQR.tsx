@@ -692,7 +692,7 @@ const qrTimeoutRef =
       "undefined" &&
     session &&
     qrCode
-      ? `${window.location.origin}/api/presensi/scan/${encodeURIComponent(
+      ? `${window.location.origin}/hadir/${encodeURIComponent(
           session.token
         )}?code=${encodeURIComponent(
           qrCode
