@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export default function PresensiLayout({
+export default function HadirLayout({
   children,
 }: {
   children: ReactNode;
