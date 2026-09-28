@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type SessionInfo = {
   meetingNo: number;
@@ -90,6 +90,57 @@ function requestInitialPosition(
   );
 }
 
+function requestPositionWithWatch(
+  onSuccess: (location: LocationData) => void,
+  onError: (error: LocationFailure) => void,
+) {
+  const readinessError = geolocationReady();
+  if (readinessError) {
+    onError(readinessError);
+    return () => {};
+  }
+
+  let finished = false;
+  const watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      navigator.geolocation.clearWatch(watchId);
+      onSuccess({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      });
+    },
+    (error) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      navigator.geolocation.clearWatch(watchId);
+      onError(locationFailureFromBrowser(error));
+    },
+    {
+      enableHighAccuracy: false,
+      maximumAge: 60_000,
+    },
+  );
+
+  const timer = window.setTimeout(() => {
+    if (finished) return;
+    finished = true;
+    navigator.geolocation.clearWatch(watchId);
+    onError(makeLocationError("GPS belum merespons. Pastikan izin lokasi Safari = Allow, lalu tekan Tes GPS lagi.", "timeout"));
+  }, 20_000);
+
+  return () => {
+    if (finished) return;
+    finished = true;
+    window.clearTimeout(timer);
+    navigator.geolocation.clearWatch(watchId);
+  };
+}
+
 function requestPrecisePosition(
   onSuccess: (location: LocationData) => void,
   onError?: (error: LocationFailure) => void,
@@ -132,19 +183,23 @@ export default function PresensiForm({ token, initialInfo }: Props) {
   const [message, setMessage] = useState("");
   const [permission, setPermission] = useState<PermissionStateValue>("unknown");
   const [locationPreview, setLocationPreview] = useState<LocationData | null>(null);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState<number | null>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
   const [detail, setDetail] = useState<{ name?: string; distance?: number | null; accuracy?: number | null } | null>(null);
 
-  const isIOS = useMemo(() => typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent), []);
-  const isAndroid = useMemo(() => typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent), []);
-
   useEffect(() => {
+    setIsIOS(/iPhone|iPad|iPod/i.test(navigator.userAgent));
+    setIsAndroid(/Android/i.test(navigator.userAgent));
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
-  const remainingSeconds = Math.max(0, Math.ceil((new Date(initialInfo.endsAt).getTime() - now) / 1000));
-  const remainingText = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
+  const remainingSeconds =
+    now === null ? Number.POSITIVE_INFINITY : Math.max(0, Math.ceil((new Date(initialInfo.endsAt).getTime() - now) / 1000));
+  const remainingText =
+    now === null ? "--:--" : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
 
   function testLocation() {
     if (gpsLoading || loading) return;
@@ -152,8 +207,8 @@ export default function PresensiForm({ token, initialInfo }: Props) {
     setGpsLoading(true);
     setMessage("Meminta izin lokasi dari Safari…");
 
-    // Panggilan ini sengaja langsung dari event tap untuk kompatibilitas Safari iPhone.
-    requestInitialPosition(
+    // watchPosition lebih konsisten di Safari iOS untuk request pertama.
+    requestPositionWithWatch(
       (initial) => {
         setLocationPreview(initial);
         setPermission("granted");
@@ -196,8 +251,8 @@ export default function PresensiForm({ token, initialInfo }: Props) {
     setDetail(null);
     setMessage("Meminta izin lokasi dari perangkat…");
 
-    // Sama seperti Tes GPS: harus dipanggil langsung dari tap pengguna untuk Safari iOS.
-    requestInitialPosition(
+    // Request langsung dari gesture pengguna; gunakan watchPosition untuk Safari iOS.
+    requestPositionWithWatch(
       (initialLocation) => {
         setPermission("granted");
         setLocationPreview(initialLocation);
@@ -304,11 +359,26 @@ export default function PresensiForm({ token, initialInfo }: Props) {
                 <span className={`gps-dot permission-${permission}`} aria-hidden="true" />
                 <div>
                   <strong>Izin lokasi: {permissionLabel(permission)}</strong>
-                  <small>{locationPreview ? `GPS ±${Math.round(locationPreview.accuracy)} meter` : "Lokasi presisi diperlukan saat mengirim presensi."}</small>
+                  <small>
+                    {locationPreview
+                      ? `GPS ±${Math.round(locationPreview.accuracy)} meter`
+                      : typeof window === "undefined"
+                        ? "Memuat pemeriksaan GPS…"
+                        : window.isSecureContext && navigator.geolocation
+                          ? "GPS browser siap. Tekan Tes GPS."
+                          : "GPS browser tidak tersedia pada halaman ini."}
+                  </small>
                 </div>
               </div>
               {!success && (
-                <button type="button" className="btn btn-secondary btn-small" onClick={testLocation} disabled={loading || gpsLoading}>
+                <button
+                  id="gps-test-button"
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  onClick={testLocation}
+                  disabled={loading || gpsLoading}
+                  style={{ touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}
+                >
                   {gpsLoading ? "Meminta GPS…" : "Tes GPS"}
                 </button>
               )}
