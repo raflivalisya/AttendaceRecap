@@ -183,7 +183,9 @@ export async function POST(
 
     // Bersihkan check-in parsial jika attendance sebelumnya gagal ditulis.
     const staleCheckinIds = new Set<string>();
-    if (existingDevice?.student_id === student.id) staleCheckinIds.add(existingDevice.id);
+if (existingDevice && existingDevice.student_id === student.id) {
+  staleCheckinIds.add(existingDevice.id);
+}
     if (existingStudentCheckin?.id) staleCheckinIds.add(existingStudentCheckin.id);
     if (staleCheckinIds.size) {
       await supabase.from("attendance_checkins").delete().in("id", [...staleCheckinIds]);
