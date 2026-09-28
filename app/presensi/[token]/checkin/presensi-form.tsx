@@ -18,18 +18,17 @@ type SessionInfo = {
 type Props = { token: string; initialInfo: SessionInfo };
 type LocationData = { latitude: number; longitude: number; accuracy: number };
 type PermissionStateValue = "granted" | "prompt" | "denied" | "unknown";
+type LocationFailureReason = "permission" | "unavailable" | "timeout" | "unsupported" | "insecure";
+type LocationFailure = Error & { reason?: LocationFailureReason };
 
-function getLocation(): Promise<LocationData> {
+function makeLocationError(message: string, reason: LocationFailureReason): LocationFailure {
+  const error = new Error(message) as LocationFailure;
+  error.reason = reason;
+  return error;
+}
+
+function readPosition(options: PositionOptions): Promise<LocationData> {
   return new Promise((resolve, reject) => {
-    if (typeof window !== "undefined" && !window.isSecureContext && location.hostname !== "localhost") {
-      reject(new Error("Akses GPS membutuhkan koneksi HTTPS. Buka kembali QR dari alamat HTTPS aplikasi."));
-      return;
-    }
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      reject(new Error("Browser ini tidak mendukung akses lokasi. Gunakan Safari/Chrome terbaru."));
-      return;
-    }
-
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({
         latitude: position.coords.latitude,
@@ -38,25 +37,48 @@ function getLocation(): Promise<LocationData> {
       }),
       (error) => {
         if (error.code === error.PERMISSION_DENIED) {
-          reject(new Error("Izin lokasi ditolak. Ikuti panduan izin lokasi di bawah, lalu coba lagi."));
+          reject(makeLocationError("Izin lokasi ditolak. Buka pengaturan situs Safari → Location → Allow, lalu coba lagi.", "permission"));
         } else if (error.code === error.POSITION_UNAVAILABLE) {
-          reject(new Error("Lokasi belum tersedia. Aktifkan GPS dan tunggu beberapa detik di area terbuka."));
+          reject(makeLocationError("Lokasi belum tersedia. Aktifkan Location Services dan Precise Location, lalu coba di area yang lebih terbuka.", "unavailable"));
         } else if (error.code === error.TIMEOUT) {
-          reject(new Error("GPS terlalu lama merespons. Pastikan lokasi presisi aktif, lalu coba lagi."));
+          reject(makeLocationError("GPS terlalu lama merespons. Tunggu beberapa detik lalu coba lagi.", "timeout"));
         } else {
-          reject(new Error("Gagal membaca lokasi perangkat."));
+          reject(makeLocationError("Gagal membaca lokasi perangkat.", "unavailable"));
         }
       },
-      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
+      options,
     );
   });
+}
+
+async function getLocation(): Promise<LocationData> {
+  if (typeof window !== "undefined" && !window.isSecureContext && location.hostname !== "localhost") {
+    throw makeLocationError("Akses GPS membutuhkan koneksi HTTPS. Buka kembali QR dari alamat HTTPS aplikasi.", "insecure");
+  }
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    throw makeLocationError("Browser ini tidak mendukung akses lokasi. Gunakan Safari/Chrome terbaru.", "unsupported");
+  }
+
+  // Safari iOS lebih stabil jika izin/lokasi awal diminta tanpa high-accuracy terlebih dahulu.
+  // Setelah itu, coba tingkatkan akurasi. Jika percobaan presisi timeout, lokasi awal tetap
+  // dikirim ke server dan server tetap menjadi penentu akhir radius/akurasi.
+  const initial = await readPosition({ enableHighAccuracy: false, timeout: 15_000, maximumAge: 60_000 });
+
+  try {
+    const precise = await readPosition({ enableHighAccuracy: true, timeout: 30_000, maximumAge: 0 });
+    return precise.accuracy <= initial.accuracy ? precise : initial;
+  } catch (error) {
+    const failure = error as LocationFailure;
+    if (failure.reason === "permission") throw failure;
+    return initial;
+  }
 }
 
 function permissionLabel(state: PermissionStateValue) {
   if (state === "granted") return "Diizinkan";
   if (state === "denied") return "Ditolak";
-  if (state === "prompt") return "Akan diminta";
-  return "Belum diketahui";
+  if (state === "prompt") return "Tekan Tes GPS untuk mengizinkan";
+  return "Tekan Tes GPS untuk memeriksa";
 }
 
 export default function PresensiForm({ token, initialInfo }: Props) {
@@ -112,6 +134,8 @@ export default function PresensiForm({ token, initialInfo }: Props) {
       setMessage(`GPS siap. Akurasi saat ini ±${Math.round(location.accuracy)} meter.`);
     } catch (error) {
       setLocationPreview(null);
+      const failure = error as LocationFailure;
+      if (failure.reason === "permission") setPermission("denied");
       setMessage(error instanceof Error ? error.message : "Gagal membaca GPS.");
     }
   }
@@ -172,6 +196,8 @@ export default function PresensiForm({ token, initialInfo }: Props) {
       if (error instanceof DOMException && error.name === "AbortError") {
         setMessage("Server terlalu lama merespons. Coba lagi atau scan ulang QR jika sesi hampir habis.");
       } else {
+        const failure = error as LocationFailure;
+        if (failure.reason === "permission") setPermission("denied");
         setMessage(error instanceof Error ? error.message : "Presensi gagal.");
       }
     } finally {
