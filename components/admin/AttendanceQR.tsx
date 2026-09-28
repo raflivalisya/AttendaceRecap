@@ -687,18 +687,16 @@ const qrTimeoutRef =
    * ========================================
    */
 
-  const qrUrl =
-    typeof window !==
-      "undefined" &&
-    session &&
-    qrCode
-      ? `${window.location.origin}/hadir/${encodeURIComponent(
-          session.token
-        )}?code=${encodeURIComponent(
-          qrCode
-        )}`
-      : "";
-
+const qrUrl =
+  typeof window !== "undefined" &&
+  session &&
+  qrCode
+    ? `${window.location.origin}/api/presensi/scan/${encodeURIComponent(
+        session.token
+      )}?code=${encodeURIComponent(
+        qrCode
+      )}`
+    : "";
   /*
    * ========================================
    * COUNTDOWN
