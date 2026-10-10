@@ -1,237 +1,94 @@
-import {
-  randomUUID,
-} from "node:crypto";
-
-import {
-  createClient,
-} from "@supabase/supabase-js";
-
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
-
-import {
-  createCheckinTicket,
-  verifyDynamicQr,
-} from "@/lib/presensi-ticket";
-
-export const dynamic =
-  "force-dynamic";
-
-export const runtime =
-  "nodejs";
-
-function getSupabase() {
-  const url =
-    process.env.SUPABASE_URL ||
-    process.env
-      .NEXT_PUBLIC_SUPABASE_URL;
-
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SECRET_KEY;
-
-  if (
-    !url ||
-    !serviceKey
-  ) {
-    throw new Error(
-      "Konfigurasi Supabase belum lengkap."
-    );
-  }
-
-  return createClient(
-    url,
-    serviceKey,
-    {
-      auth: {
-        persistSession:
-          false,
-
-        autoRefreshToken:
-          false,
-      },
-    }
-  );
-}
 
 function redirectError(
   request: NextRequest,
   token: string,
-  message: string
+  message: string,
 ) {
-  const url =
-    new URL(
-      `/presensi/${encodeURIComponent(
-        token
-      )}/error`,
-      request.url
-    );
-
-  url.searchParams.set(
-    "message",
-    message
-  );
-
-  return NextResponse.redirect(
-    url
-  );
+  const safeToken = token ? encodeURIComponent(token) : "invalid";
+  const url = new URL(`/presensi/${safeToken}/error`, request.url);
+  url.searchParams.set("message", message);
+  return noCache(NextResponse.redirect(url, 303));
 }
 
 export async function GET(
   request: NextRequest,
-
-  context: {
-    params: Promise<{
-      token: string;
-    }>;
-  }
+  context: { params: Promise<{ token: string }> },
 ) {
   try {
-    const {
-      token,
-    } =
-      await context.params;
+    const { token } = await context.params;
+    const code = request.nextUrl.searchParams.get("code");
 
-    const code =
-      request.nextUrl
-        .searchParams
-        .get(
-          "code"
-        );
-
-    if (
-      !token ||
-      !code
-    ) {
-      return redirectError(
-        request,
-        token,
-        "QR tidak valid."
-      );
+    if (!token || !code) {
+      return redirectError(request, token, "QR tidak valid.");
     }
 
-    const supabase =
-      getSupabase();
+    const supabase = getSupabase();
 
-    const {
-      data:
-        session,
-
-      error,
-    } = await supabase
-      .from(
-        "attendance_sessions"
-      )
-      .select(
-        `
-        id,
-        token,
-        starts_at,
-        ends_at,
-        is_active
-        `
-      )
-      .eq(
-        "token",
-        token
-      )
+    const { data: session, error } = await supabase
+      .from("attendance_sessions")
+      .select("id,token,starts_at,ends_at,is_active")
+      .eq("token", token)
       .maybeSingle();
 
-    if (
-      error ||
-      !session
-    ) {
-      return redirectError(
-        request,
-        token,
-        "Sesi presensi tidak ditemukan."
-      );
+    if (error || !session) {
+      return redirectError(request, token, "Sesi presensi tidak ditemukan.");
     }
 
-    if (
-      !session.is_active
-    ) {
-      return redirectError(
-        request,
-        token,
-        "Presensi sudah ditutup."
-      );
+    if (!session.is_active) {
+      return redirectError(request, token, "Presensi sudah ditutup.");
     }
 
-    const now =
-      Date.now();
+    const now = Date.now();
+    const start = new Date(session.starts_at).getTime();
+    const end = new Date(session.ends_at).getTime();
 
-    const start =
-      new Date(
-        session.starts_at
-      ).getTime();
-
-    const end =
-      new Date(
-        session.ends_at
-      ).getTime();
-
-    if (
-      now <
-      start
-    ) {
-      return redirectError(
-        request,
-        token,
-        "Presensi belum dibuka."
-      );
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      return redirectError(request, token, "Konfigurasi waktu presensi tidak valid.");
     }
 
-    if (
-      now >=
-      end
-    ) {
-      return redirectError(
-        request,
-        token,
-        "Waktu presensi sudah berakhir."
-      );
+    if (now < start) {
+      return redirectError(request, token, "Presensi belum dibuka.");
+    }
+
+    if (now >= end) {
+      return redirectError(request, token, "Waktu presensi sudah berakhir.");
     }
 
     if (
       !verifyDynamicQr(
         {
-          id:
-            session.id,
-
-          token:
-            session.token,
+          id: session.id,
+          token: session.token,
         },
-
-        code
+        code,
       )
     ) {
-      return redirectError(
-        request,
-        token,
-        "QR sudah kedaluwarsa. Scan QR terbaru."
-      );
+      return redirectError(request, token, "QR sudah kedaluwarsa. Scan QR terbaru.");
     }
 
     /*
-     * ======================================
-     * CHECKIN TICKET
-     * ======================================
+     * PENTING:
+     * Route scan TIDAK BOLEH mengecek attendance_checkins atau attendance.
+     * Device bukan identitas mahasiswa.
+     * Mahasiswa baru boleh dinyatakan sudah presensi SETELAH NPM dikirim
+     * dan student_id-nya ditemukan di POST /api/presensi/[token].
      */
 
     let ticketMinutes = 5;
+
     const { data: ticketSetting } = await supabase
       .from("system_settings")
       .select("value")
       .eq("key", "checkin_ticket_minutes")
       .maybeSingle();
 
-    const rawTicketMinutes = ticketSetting?.value && typeof ticketSetting.value === "object"
-      ? (ticketSetting.value as { value?: unknown }).value
-      : undefined;
+    const rawTicketMinutes =
+      ticketSetting?.value && typeof ticketSetting.value === "object"
+        ? (ticketSetting.value as { value?: unknown }).value
+        : undefined;
+
     const parsedTicketMinutes = Number(rawTicketMinutes);
+
     if (Number.isFinite(parsedTicketMinutes)) {
       ticketMinutes = Math.max(1, Math.min(15, parsedTicketMinutes));
     }
@@ -243,112 +100,47 @@ export async function GET(
       ticketMinutes,
     );
 
-    /*
-     * ======================================
-     * DEVICE ID
-     *
-     * Dibuat server.
-     * Tidak menggunakan localStorage Safari.
-     * ======================================
-     */
+    // Cookie ini hanya menandai browser/perangkat, bukan mahasiswa.
+    const existingDevice = request.cookies.get("presensi_device_id")?.value;
+    const deviceId = existingDevice || randomUUID();
 
-    const existingDevice =
-      request.cookies
-        .get(
-          "presensi_device_id"
-        )
-        ?.value;
-
-    const deviceId =
-      existingDevice ||
-      randomUUID();
-
-    /*
-     * ======================================
-     * REDIRECT
-     * ======================================
-     */
-
-    const destination =
-      new URL(
-        `/presensi/${encodeURIComponent(
-          token
-        )}/checkin`,
-        request.url
-      );
-
-    const response =
-      NextResponse.redirect(
-        destination
-      );
-
-    /*
-     * Cookie ticket mengikuti pengaturan (signature tetap dibatasi waktu sesi).
-     */
-    response.cookies.set(
-      "presensi_checkin_ticket",
-      ticket,
-      {
-        httpOnly:
-          true,
-
-        secure:
-          request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
-
-        sameSite:
-          "lax",
-
-        path:
-          "/",
-
-        maxAge:
-          Math.max(1, Math.min(ticketMinutes * 60, Math.ceil((end - now) / 1000))),
-      }
+    // Selalu arahkan ke form NPM. Tidak ada pengecekan "sudah absen" di sini.
+    const destination = new URL(
+      `/presensi/${encodeURIComponent(token)}/checkin`,
+      request.url,
     );
 
-    /*
-     * Device ID 1 tahun.
-     */
-    response.cookies.set(
-      "presensi_device_id",
-      deviceId,
-      {
-        httpOnly:
-          true,
+    // Query unik membantu mencegah Safari menampilkan halaman lama dari cache/back-forward cache.
+    destination.searchParams.set("scan", String(Date.now()));
 
-        secure:
-          request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
+    const response = NextResponse.redirect(destination, 303);
 
-        sameSite:
-          "lax",
+    response.cookies.set("presensi_checkin_ticket", ticket, {
+      httpOnly: true,
+      secure: request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: Math.max(
+        1,
+        Math.min(ticketMinutes * 60, Math.ceil((end - now) / 1000)),
+      ),
+    });
 
-        path:
-          "/",
+    response.cookies.set("presensi_device_id", deviceId, {
+      httpOnly: true,
+      secure: request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 365 * 24 * 60 * 60,
+    });
 
-        maxAge:
-          365 *
-          24 *
-          60 *
-          60,
-      }
-    );
-
-    response.headers.set(
-      "Cache-Control",
-      "no-store, no-cache, must-revalidate"
-    );
-
-    return response;
+    return noCache(response);
   } catch (error) {
-    console.error(
-      "SCAN QR ERROR:",
-      error
-    );
-
+    console.error("SCAN QR ERROR:", error);
     return redirectError(
       request,
-      "",
-      "Terjadi kesalahan saat membaca QR."
+      "invalid",
+      "Terjadi kesalahan saat membaca QR.",
     );
   }
 }
