@@ -1,25 +1,77 @@
+import { randomUUID } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  createCheckinTicket,
+  verifyDynamicQr,
+} from "@/lib/presensi-ticket";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const runtime = "nodejs";
+
+function getSupabase() {
+  const url =
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error("Konfigurasi Supabase belum lengkap.");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+function applyNoCache(response: NextResponse) {
+  response.headers.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+  );
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  response.headers.set("Surrogate-Control", "no-store");
+  return response;
+}
 
 function redirectError(
   request: NextRequest,
   token: string,
   message: string,
 ) {
-  const safeToken = token ? encodeURIComponent(token) : "invalid";
-  const url = new URL(`/presensi/${safeToken}/error`, request.url);
+  const url = new URL(
+    `/presensi/${encodeURIComponent(token || "invalid")}/error`,
+    request.url,
+  );
+
   url.searchParams.set("message", message);
-  return noCache(NextResponse.redirect(url, 303));
+  url.searchParams.set("_", Date.now().toString());
+
+  return applyNoCache(NextResponse.redirect(url));
 }
 
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ token: string }> },
+  context: {
+    params: Promise<{
+      token: string;
+    }>;
+  },
 ) {
   try {
     const { token } = await context.params;
     const code = request.nextUrl.searchParams.get("code");
 
     if (!token || !code) {
-      return redirectError(request, token, "QR tidak valid.");
+      return redirectError(request, token || "", "QR tidak valid.");
     }
 
     const supabase = getSupabase();
@@ -31,7 +83,11 @@ export async function GET(
       .maybeSingle();
 
     if (error || !session) {
-      return redirectError(request, token, "Sesi presensi tidak ditemukan.");
+      return redirectError(
+        request,
+        token,
+        "Sesi presensi tidak ditemukan.",
+      );
     }
 
     if (!session.is_active) {
@@ -43,7 +99,11 @@ export async function GET(
     const end = new Date(session.ends_at).getTime();
 
     if (!Number.isFinite(start) || !Number.isFinite(end)) {
-      return redirectError(request, token, "Konfigurasi waktu presensi tidak valid.");
+      return redirectError(
+        request,
+        token,
+        "Konfigurasi waktu sesi tidak valid.",
+      );
     }
 
     if (now < start) {
@@ -51,7 +111,11 @@ export async function GET(
     }
 
     if (now >= end) {
-      return redirectError(request, token, "Waktu presensi sudah berakhir.");
+      return redirectError(
+        request,
+        token,
+        "Waktu presensi sudah berakhir.",
+      );
     }
 
     if (
@@ -63,17 +127,14 @@ export async function GET(
         code,
       )
     ) {
-      return redirectError(request, token, "QR sudah kedaluwarsa. Scan QR terbaru.");
+      return redirectError(
+        request,
+        token,
+        "QR sudah kedaluwarsa. Scan QR terbaru.",
+      );
     }
 
-    /*
-     * PENTING:
-     * Route scan TIDAK BOLEH mengecek attendance_checkins atau attendance.
-     * Device bukan identitas mahasiswa.
-     * Mahasiswa baru boleh dinyatakan sudah presensi SETELAH NPM dikirim
-     * dan student_id-nya ditemukan di POST /api/presensi/[token].
-     */
-
+    // Ambil durasi tiket check-in dari system settings.
     let ticketMinutes = 5;
 
     const { data: ticketSetting } = await supabase
@@ -100,24 +161,30 @@ export async function GET(
       ticketMinutes,
     );
 
-    // Cookie ini hanya menandai browser/perangkat, bukan mahasiswa.
+    /*
+     * DEVICE ID hanya dipakai untuk validasi SETELAH NPM dikirim.
+     * Route scan ini TIDAK mengecek attendance_checkins dan TIDAK
+     * menyimpulkan mahasiswa sudah presensi hanya berdasarkan device.
+     */
     const existingDevice = request.cookies.get("presensi_device_id")?.value;
     const deviceId = existingDevice || randomUUID();
 
-    // Selalu arahkan ke form NPM. Tidak ada pengecekan "sudah absen" di sini.
+    // Selalu arahkan mahasiswa ke form input NPM setelah QR valid.
     const destination = new URL(
       `/presensi/${encodeURIComponent(token)}/checkin`,
       request.url,
     );
 
-    // Query unik membantu mencegah Safari menampilkan halaman lama dari cache/back-forward cache.
-    destination.searchParams.set("scan", String(Date.now()));
+    // Hindari Safari/Vercel menyajikan redirect/form dari cache lama.
+    destination.searchParams.set("scan", randomUUID());
 
-    const response = NextResponse.redirect(destination, 303);
+    const response = applyNoCache(NextResponse.redirect(destination));
 
     response.cookies.set("presensi_checkin_ticket", ticket, {
       httpOnly: true,
-      secure: request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
+      secure:
+        request.nextUrl.protocol === "https:" ||
+        process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
       maxAge: Math.max(
@@ -128,18 +195,21 @@ export async function GET(
 
     response.cookies.set("presensi_device_id", deviceId, {
       httpOnly: true,
-      secure: request.nextUrl.protocol === "https:" || process.env.NODE_ENV === "production",
+      secure:
+        request.nextUrl.protocol === "https:" ||
+        process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
       maxAge: 365 * 24 * 60 * 60,
     });
 
-    return noCache(response);
+    return response;
   } catch (error) {
     console.error("SCAN QR ERROR:", error);
+
     return redirectError(
       request,
-      "invalid",
+      "",
       "Terjadi kesalahan saat membaca QR.",
     );
   }
