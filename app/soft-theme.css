@@ -1,0 +1,798 @@
+/* =========================================================
+   AttendanceRecap — Soft & Friendly Theme
+   Visual-only override. No business logic/database changes.
+   ========================================================= */
+
+:root {
+  --soft-bg: #f7f8fc;
+  --soft-bg-warm: #fcfaf7;
+  --soft-surface: rgba(255, 255, 255, 0.92);
+  --soft-surface-solid: #ffffff;
+  --soft-surface-muted: #f8f8fc;
+  --soft-text: #344054;
+  --soft-text-strong: #273142;
+  --soft-muted: #7a8494;
+  --soft-line: #e8e9f0;
+  --soft-line-strong: #dcdee8;
+  --soft-primary: #7c8edb;
+  --soft-primary-dark: #6375c3;
+  --soft-primary-soft: #eef0ff;
+  --soft-lilac: #f1ecfb;
+  --soft-pink: #fceff4;
+  --soft-mint: #eaf7f2;
+  --soft-peach: #fff2e8;
+  --soft-sky: #edf6fb;
+  --soft-danger: #b9606b;
+  --soft-danger-bg: #fff1f3;
+  --soft-success: #548a72;
+  --soft-success-bg: #edf8f3;
+  --soft-warning: #98743c;
+  --soft-warning-bg: #fff7e8;
+  --soft-radius-sm: 12px;
+  --soft-radius-md: 16px;
+  --soft-radius-lg: 22px;
+  --soft-radius-xl: 28px;
+  --soft-shadow-sm: 0 4px 14px rgba(76, 86, 120, 0.055);
+  --soft-shadow-md: 0 14px 36px rgba(76, 86, 120, 0.08);
+  --soft-shadow-lg: 0 24px 60px rgba(76, 86, 120, 0.12);
+  --soft-focus: rgba(124, 142, 219, 0.2);
+
+  /* Override the legacy/global tokens too. */
+  --ux-bg: var(--soft-bg);
+  --ux-surface: var(--soft-surface-solid);
+  --ux-surface-subtle: var(--soft-surface-muted);
+  --ux-surface-muted: #f0f1f7;
+  --ux-text: var(--soft-text);
+  --ux-text-soft: #667085;
+  --ux-muted: var(--soft-muted);
+  --ux-line: var(--soft-line);
+  --ux-line-strong: var(--soft-line-strong);
+  --ux-primary-950: #5363a7;
+  --ux-primary-900: #5f70b6;
+  --ux-primary-800: var(--soft-primary-dark);
+  --ux-primary-700: var(--soft-primary);
+  --ux-primary-100: var(--soft-primary-soft);
+  --ux-success: var(--soft-success);
+  --ux-success-soft: var(--soft-success-bg);
+  --ux-warning: var(--soft-warning);
+  --ux-warning-soft: var(--soft-warning-bg);
+  --ux-danger: var(--soft-danger);
+  --ux-danger-soft: var(--soft-danger-bg);
+  --ux-info: #668ba8;
+  --ux-info-soft: var(--soft-sky);
+  --ux-radius-sm: var(--soft-radius-sm);
+  --ux-radius-md: var(--soft-radius-md);
+  --ux-radius-lg: var(--soft-radius-lg);
+  --ux-radius-xl: var(--soft-radius-xl);
+  --ux-shadow-sm: var(--soft-shadow-sm);
+  --ux-shadow-md: var(--soft-shadow-md);
+  --ux-shadow-lg: var(--soft-shadow-lg);
+  --ux-focus: var(--soft-primary);
+
+  --navy: var(--soft-primary-dark);
+  --navy-2: var(--soft-primary);
+  --blue: var(--soft-primary);
+  --blue-soft: var(--soft-primary-soft);
+  --ink: var(--soft-text);
+  --muted: var(--soft-muted);
+  --line: var(--soft-line);
+  --bg: var(--soft-bg);
+  --card: var(--soft-surface-solid);
+  --green: var(--soft-success);
+  --green-soft: var(--soft-success-bg);
+  --yellow: var(--soft-warning);
+  --yellow-soft: var(--soft-warning-bg);
+  --red: var(--soft-danger);
+  --red-soft: var(--soft-danger-bg);
+  --shadow: var(--soft-shadow-sm);
+}
+
+html,
+body {
+  background: var(--soft-bg) !important;
+}
+
+body {
+  color: var(--soft-text) !important;
+  background:
+    radial-gradient(circle at 8% -4%, rgba(196, 207, 255, 0.33), transparent 30rem),
+    radial-gradient(circle at 96% 4%, rgba(248, 214, 229, 0.28), transparent 27rem),
+    linear-gradient(180deg, #fafbff 0%, #f7f8fc 44%, #faf9f7 100%) !important;
+}
+
+::selection {
+  background: #e2e6ff !important;
+  color: var(--soft-text-strong) !important;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline-color: var(--soft-primary) !important;
+  box-shadow: 0 0 0 4px var(--soft-focus) !important;
+}
+
+/* ---------- Public chrome ---------- */
+.site-header {
+  border-bottom: 1px solid rgba(232, 233, 240, 0.82) !important;
+  background: rgba(252, 252, 255, 0.82) !important;
+  backdrop-filter: blur(20px) saturate(135%) !important;
+  box-shadow: 0 5px 20px rgba(80, 88, 120, 0.035) !important;
+}
+
+.brand-mark {
+  border-radius: 14px !important;
+  background: linear-gradient(145deg, #8999e4, #6e7dcc) !important;
+  box-shadow: 0 8px 20px rgba(108, 124, 205, 0.18) !important;
+}
+
+.main-nav a {
+  border-radius: 999px !important;
+  color: #657083 !important;
+}
+
+.main-nav a:hover,
+.main-nav a[aria-current="page"] {
+  background: var(--soft-primary-soft) !important;
+  color: var(--soft-primary-dark) !important;
+}
+
+.site-footer {
+  border-top: 1px solid var(--soft-line) !important;
+  background: rgba(255, 255, 255, 0.64) !important;
+  backdrop-filter: blur(14px);
+}
+
+/* ---------- Shared surfaces ---------- */
+.panel,
+.info-card,
+.stat-card,
+.login-card,
+.setup-box,
+.table-wrap,
+.tab-bar {
+  border-color: var(--soft-line) !important;
+  background: var(--soft-surface) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+  backdrop-filter: blur(12px);
+}
+
+.panel,
+.login-card,
+.setup-box {
+  border-radius: var(--soft-radius-lg) !important;
+}
+
+.info-card,
+.stat-card {
+  border-radius: var(--soft-radius-md) !important;
+}
+
+.panel-head {
+  border-bottom-color: var(--soft-line) !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(250,250,253,.9)) !important;
+}
+
+.panel-head h2,
+h1,
+h2,
+h3 {
+  color: var(--soft-text-strong) !important;
+}
+
+.eyebrow {
+  color: var(--soft-primary-dark) !important;
+}
+
+.muted,
+.hero p,
+.panel-head p {
+  color: var(--soft-muted) !important;
+}
+
+/* ---------- Forms ---------- */
+.input,
+.select,
+.status-select,
+.score-input,
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+select,
+textarea {
+  border-color: var(--soft-line-strong) !important;
+  border-radius: 13px !important;
+  background: rgba(255,255,255,.96) !important;
+  color: var(--soft-text) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7) !important;
+}
+
+.input:hover,
+.select:hover,
+.status-select:hover,
+.score-input:hover,
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):hover,
+select:hover,
+textarea:hover {
+  border-color: #c8cce0 !important;
+}
+
+.input:focus,
+.select:focus,
+.status-select:focus,
+.score-input:focus,
+input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--soft-primary) !important;
+  box-shadow: 0 0 0 4px var(--soft-focus) !important;
+}
+
+/* ---------- Buttons ---------- */
+.btn,
+button:not(.tab-btn):not(.meeting-btn):not(.course-btn) {
+  border-radius: 13px !important;
+}
+
+.btn-primary {
+  border-color: transparent !important;
+  background: linear-gradient(135deg, #8796df, #7281cc) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 20px rgba(112, 128, 203, .18) !important;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c8bd5, #6676c1) !important;
+  box-shadow: 0 10px 24px rgba(112, 128, 203, .23) !important;
+}
+
+.btn-secondary {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.88) !important;
+  color: #657083 !important;
+  box-shadow: 0 3px 10px rgba(72,82,116,.04) !important;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: #d5d7e5 !important;
+  background: #fafaff !important;
+  color: var(--soft-primary-dark) !important;
+}
+
+.btn-success {
+  border-color: #cfe9dc !important;
+  background: var(--soft-success-bg) !important;
+  color: var(--soft-success) !important;
+  box-shadow: none !important;
+}
+
+.btn-danger {
+  border-color: #f0d4da !important;
+  background: var(--soft-danger-bg) !important;
+  color: var(--soft-danger) !important;
+}
+
+/* ---------- Soft status chips ---------- */
+.badge,
+.status-dot,
+.student-status,
+.qr-participant-badge,
+.save-state {
+  border-radius: 999px !important;
+}
+
+.badge.good,
+.status-H,
+.save-state-saved {
+  background: var(--soft-success-bg) !important;
+  color: var(--soft-success) !important;
+}
+
+.badge.warn,
+.status-S,
+.save-state-unsaved,
+.save-state-saving {
+  background: var(--soft-warning-bg) !important;
+  color: var(--soft-warning) !important;
+}
+
+.status-I {
+  background: var(--soft-sky) !important;
+  color: #5f819b !important;
+}
+
+.status-A,
+.save-state-error {
+  background: var(--soft-danger-bg) !important;
+  color: var(--soft-danger) !important;
+}
+
+/* ---------- Tabs ---------- */
+.tab-bar,
+.student-tabs {
+  border-radius: 16px !important;
+  padding: 6px !important;
+  background: rgba(255,255,255,.86) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+}
+
+.tab-btn,
+.student-tabs button {
+  border-radius: 12px !important;
+  color: #737d8e !important;
+}
+
+.tab-btn:hover,
+.student-tabs button:hover {
+  background: #f5f5fb !important;
+  color: var(--soft-primary-dark) !important;
+}
+
+.tab-btn.active,
+.student-tabs button.active,
+.student-tabs button[aria-selected="true"] {
+  background: var(--soft-primary-soft) !important;
+  color: var(--soft-primary-dark) !important;
+  box-shadow: none !important;
+}
+
+/* ---------- Tables ---------- */
+.table-wrap,
+.student-table-wrap {
+  border-radius: 16px !important;
+  overflow: auto;
+}
+
+.admin-table th,
+.attendance-table thead th,
+.student-card th,
+.rekap-table th {
+  background: #f5f5fa !important;
+  color: #6c7585 !important;
+}
+
+.admin-table td,
+.attendance-table td,
+.student-card td,
+.rekap-table td {
+  border-bottom-color: #eeeeF3 !important;
+  background: rgba(255,255,255,.93) !important;
+}
+
+.admin-table tbody tr:nth-child(even) td,
+.attendance-table tbody tr:nth-child(even) td,
+.student-card tbody tr:nth-child(even) td,
+.rekap-table tbody tr:nth-child(even) td {
+  background: #fbfbfd !important;
+}
+
+.admin-table tbody tr:hover td,
+.attendance-table tbody tr:hover td,
+.student-card tbody tr:hover td,
+.rekap-table tbody tr:hover td {
+  background: #f7f7fc !important;
+}
+
+/* ---------- Admin/Dosen ---------- */
+.admin-modern {
+  --admin-navy-950: #5b69aa;
+  --admin-navy-900: #6372b6;
+  --admin-navy-800: #6f7fca;
+  --admin-navy-700: #8090da;
+  --admin-blue-100: var(--soft-primary-soft);
+  --admin-blue-50: #f8f8fd;
+  --admin-gold: #d1a976;
+  --admin-gold-soft: #fff6ea;
+  --admin-red: var(--soft-danger);
+  --admin-red-soft: var(--soft-danger-bg);
+  --admin-green: var(--soft-success);
+  --admin-green-soft: var(--soft-success-bg);
+  --admin-text: var(--soft-text);
+  --admin-muted: var(--soft-muted);
+  --admin-line: var(--soft-line);
+  --admin-surface: rgba(255,255,255,.93);
+  --admin-bg: var(--soft-bg);
+  background:
+    radial-gradient(circle at 6% 0%, rgba(204, 213, 255, .42), transparent 28rem),
+    radial-gradient(circle at 98% 5%, rgba(248, 219, 230, .35), transparent 26rem),
+    linear-gradient(180deg, #fafaff 0%, #f7f8fc 42%, #faf9f7 100%) !important;
+}
+
+.admin-modern .shell {
+  max-width: 1500px !important;
+}
+
+.admin-modern .hero {
+  min-height: 138px !important;
+  border: 1px solid rgba(220, 222, 235, .85) !important;
+  border-radius: 26px !important;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(241, 223, 247, .8), transparent 18rem),
+    linear-gradient(135deg, #f8f7ff 0%, #f2f4ff 52%, #fff8f4 100%) !important;
+  box-shadow: var(--soft-shadow-md) !important;
+}
+
+.admin-modern .hero::before {
+  width: 5px !important;
+  background: linear-gradient(180deg, #9aa8ea, #dfb7d1) !important;
+}
+
+.admin-modern .hero::after {
+  background: rgba(255,255,255,.42) !important;
+}
+
+.admin-modern .hero .eyebrow {
+  color: var(--soft-primary-dark) !important;
+}
+
+.admin-modern .hero h1 {
+  color: var(--soft-text-strong) !important;
+}
+
+.admin-modern .hero p {
+  color: #778092 !important;
+}
+
+.admin-modern .hero .badge.neutral {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.72) !important;
+  color: #6a7383 !important;
+}
+
+.admin-modern .panel {
+  border-color: var(--soft-line) !important;
+  border-radius: 20px !important;
+  background: rgba(255,255,255,.9) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+}
+
+.admin-modern .panel-head {
+  border-bottom-color: var(--soft-line) !important;
+  background: linear-gradient(180deg, #fff, #fcfcfe) !important;
+}
+
+.admin-modern .btn-primary {
+  border-color: transparent !important;
+  background: linear-gradient(135deg, #8796df, #7281cc) !important;
+  box-shadow: 0 8px 20px rgba(112,128,203,.18) !important;
+}
+
+.admin-modern .btn-secondary {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.9) !important;
+  color: #697486 !important;
+}
+
+.admin-modern .icon-btn {
+  border-color: var(--soft-line) !important;
+  border-radius: 13px !important;
+  background: #f4f4fb !important;
+  color: var(--soft-primary-dark) !important;
+}
+
+.admin-pro-topbar {
+  border-bottom-color: rgba(232,233,240,.9) !important;
+  background: rgba(250,250,253,.88) !important;
+  backdrop-filter: blur(18px) saturate(135%) !important;
+}
+
+.admin-pro-main-nav a,
+.admin-pro-main-nav button {
+  border-radius: 12px !important;
+}
+
+.admin-pro-home,
+.admin-pro-welcome,
+.admin-pro-course-card,
+.admin-pro-stat-card,
+.admin-pro-panel,
+.admin-pro-today-card,
+.admin-pro-action-card {
+  border-color: var(--soft-line) !important;
+}
+
+.admin-pro-welcome {
+  border-radius: 22px !important;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(245,221,234,.48), transparent 16rem),
+    linear-gradient(135deg, #faf9ff, #f5f6ff 56%, #fff9f4) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+}
+
+/* ---------- Asdos ---------- */
+.asdos-app {
+  --as-primary: var(--soft-primary-dark);
+  --as-primary-dark: #5969ad;
+  --as-line: var(--soft-line);
+  --as-muted: var(--soft-muted);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(204,213,255,.38), transparent 28rem),
+    radial-gradient(circle at 98% 3%, rgba(247,218,230,.3), transparent 26rem),
+    var(--soft-bg) !important;
+}
+
+.asdos-app .hero {
+  border: 1px solid var(--soft-line) !important;
+  border-radius: 24px !important;
+  background: linear-gradient(135deg, #f7f6ff, #f1f4ff 58%, #fff8f3) !important;
+  color: var(--soft-text) !important;
+  box-shadow: var(--soft-shadow-md) !important;
+}
+
+.asdos-app .hero .eyebrow { color: var(--soft-primary-dark) !important; }
+.asdos-app .hero h1 { color: var(--soft-text-strong) !important; }
+.asdos-app .hero p { color: var(--soft-muted) !important; }
+.asdos-app .hero .badge.neutral {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.72) !important;
+  color: #6d7686 !important;
+}
+.asdos-app .hero .btn-secondary {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.9) !important;
+  color: #657083 !important;
+}
+
+.asdos-app .login-card::before {
+  background: linear-gradient(145deg, #8999e4, #6f7dca) !important;
+  box-shadow: 0 8px 18px rgba(112,128,203,.17) !important;
+}
+
+.asdos-app .course-btn {
+  border-radius: 16px !important;
+}
+
+/* ---------- Student ---------- */
+.student-app {
+  --s-navy: #5e6db0;
+  --s-blue: var(--soft-primary-dark);
+  --s-line: var(--soft-line);
+  --s-muted: var(--soft-muted);
+  --s-bg: var(--soft-bg);
+  background:
+    radial-gradient(circle at 7% 0%, rgba(204,213,255,.4), transparent 28rem),
+    radial-gradient(circle at 98% 3%, rgba(247,218,230,.3), transparent 25rem),
+    var(--soft-bg) !important;
+}
+
+.student-login-page {
+  background:
+    radial-gradient(circle at 10% 18%, rgba(204,213,255,.52), transparent 22rem),
+    radial-gradient(circle at 90% 12%, rgba(248,220,232,.48), transparent 22rem),
+    linear-gradient(135deg, #f8f7ff, #faf9f7) !important;
+}
+
+.student-login-card {
+  border: 1px solid var(--soft-line) !important;
+  border-radius: 26px !important;
+  background: rgba(255,255,255,.9) !important;
+  box-shadow: var(--soft-shadow-lg) !important;
+  backdrop-filter: blur(16px);
+}
+
+.student-header {
+  border: 1px solid var(--soft-line) !important;
+  border-radius: 20px !important;
+  background: rgba(255,255,255,.9) !important;
+  color: var(--soft-text) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+}
+
+.student-course-select,
+.student-course-hero,
+.student-card,
+.student-overview-grid article,
+.student-schedule-list article {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.9) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+}
+
+.student-course-select,
+.student-course-hero,
+.student-card {
+  border-radius: 18px !important;
+}
+
+.student-overview-grid article,
+.student-schedule-list article {
+  border-radius: 15px !important;
+}
+
+/* ---------- Rekap public ---------- */
+.rekap-modern .rekap-page {
+  background:
+    radial-gradient(circle at 7% 0%, rgba(204,213,255,.34), transparent 28rem),
+    radial-gradient(circle at 98% 4%, rgba(248,220,232,.27), transparent 26rem),
+    var(--soft-bg) !important;
+}
+
+.rekap-modern .portal-header {
+  border: 1px solid var(--soft-line) !important;
+  border-radius: 24px 24px 0 0 !important;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(243,224,235,.72), transparent 18rem),
+    linear-gradient(135deg, #f8f7ff, #f0f3ff 58%, #fff8f4) !important;
+  color: var(--soft-text) !important;
+  box-shadow: var(--soft-shadow-md) !important;
+}
+
+.rekap-modern .portal-brand,
+.rekap-modern .portal-brand h1,
+.rekap-modern .portal-brand p {
+  color: var(--soft-text-strong) !important;
+}
+
+.rekap-modern .portal-start-grid,
+.rekap-modern .portal-welcome-card,
+.rekap-modern .portal-selection-card,
+.rekap-modern .portal-content-card,
+.rekap-modern .portal-data-panel,
+.rekap-modern .portal-stat-card,
+.rekap-modern .portal-info-item {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.9) !important;
+  box-shadow: var(--soft-shadow-sm) !important;
+}
+
+.rekap-modern .portal-start-grid {
+  border-radius: 0 0 22px 22px !important;
+}
+
+.rekap-modern .portal-welcome-card,
+.rekap-modern .portal-selection-card,
+.rekap-modern .portal-content-card,
+.rekap-modern .portal-data-panel {
+  border-radius: 18px !important;
+}
+
+.rekap-modern .portal-section-title {
+  background: #f6f6fb !important;
+  color: #6a7485 !important;
+}
+
+/* ---------- Presensi ---------- */
+.presensi-production-page,
+.presensi-shell {
+  background: transparent !important;
+}
+
+.presensi-hero,
+.attendance-qr-card,
+.presensi-success-card {
+  border: 1px solid var(--soft-line) !important;
+  border-radius: 24px !important;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(245,221,234,.44), transparent 14rem),
+    rgba(255,255,255,.92) !important;
+  box-shadow: var(--soft-shadow-md) !important;
+}
+
+.attendance-qr-code-wrap {
+  border-radius: 20px !important;
+  background: #fff !important;
+  box-shadow: inset 0 0 0 1px var(--soft-line) !important;
+}
+
+.presensi-submit {
+  border-radius: 14px !important;
+  background: linear-gradient(135deg, #8796df, #7281cc) !important;
+  box-shadow: 0 10px 22px rgba(112,128,203,.2) !important;
+}
+
+/* ---------- Loading / errors / network ---------- */
+.global-state-card,
+.global-network-banner,
+.error,
+.success,
+.system-message,
+.system-note {
+  border-radius: 16px !important;
+}
+
+.global-state-card {
+  border-color: var(--soft-line) !important;
+  background: rgba(255,255,255,.93) !important;
+  box-shadow: var(--soft-shadow-md) !important;
+}
+
+.error,
+.system-message.error {
+  border-color: #f0d4da !important;
+  background: var(--soft-danger-bg) !important;
+  color: var(--soft-danger) !important;
+}
+
+.success,
+.system-message.success {
+  border-color: #d6ecdf !important;
+  background: var(--soft-success-bg) !important;
+  color: var(--soft-success) !important;
+}
+
+/* ---------- Motion ---------- */
+.panel,
+.info-card,
+.stat-card,
+.student-card,
+.student-overview-grid article,
+.admin-modern .panel,
+.admin-pro-course-card,
+.course-btn {
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease !important;
+}
+
+@media (hover:hover) {
+  .info-card:hover,
+  .stat-card:hover,
+  .student-overview-grid article:hover,
+  .admin-pro-course-card:hover,
+  .course-btn:hover {
+    transform: translateY(-2px) !important;
+    border-color: #dcddeb !important;
+    box-shadow: 0 12px 26px rgba(76,86,120,.075) !important;
+  }
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 760px) {
+  .shell,
+  .admin-modern .shell,
+  .asdos-app .shell,
+  .rekap-modern .rekap-shell {
+    width: calc(100% - 16px) !important;
+  }
+
+  .page {
+    padding-top: 14px !important;
+  }
+
+  .admin-modern .hero,
+  .asdos-app .hero {
+    border-radius: 20px !important;
+    padding: 18px !important;
+  }
+
+  .panel,
+  .admin-modern .panel,
+  .student-card,
+  .student-course-hero,
+  .student-course-select {
+    border-radius: 16px !important;
+  }
+
+  .btn,
+  .input,
+  .select,
+  .status-select,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  select,
+  textarea {
+    min-height: 46px !important;
+  }
+
+  .main-nav {
+    gap: 2px !important;
+  }
+
+  .main-nav a {
+    padding-inline: 10px !important;
+  }
+}
+
+@media (max-width: 440px) {
+  body {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(204,213,255,.28), transparent 18rem),
+      var(--soft-bg) !important;
+  }
+
+  .admin-modern .hero,
+  .asdos-app .hero,
+  .presensi-hero,
+  .attendance-qr-card,
+  .presensi-success-card {
+    border-radius: 18px !important;
+  }
+
+  .panel-body,
+  .admin-modern .panel-body {
+    padding: 15px !important;
+  }
+}
