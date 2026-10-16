@@ -1,0 +1,964 @@
+/* ============================================================
+   AttendanceRecap — MeowTP-inspired academic dashboard skin
+   Visual-only override. No database/API/business logic changes.
+   Loaded AFTER admin-modern.css.
+   ============================================================ */
+
+.admin-modern {
+  --neo-ink: #111318;
+  --neo-bg: #f7f7f8;
+  --neo-white: #ffffff;
+  --neo-orange: #ff851b;
+  --neo-orange-soft: #ffb269;
+  --neo-blue: #7bcdf2;
+  --neo-blue-soft: #cfeefe;
+  --neo-green: #77dfb7;
+  --neo-green-soft: #d7f8e8;
+  --neo-yellow: #ffe568;
+  --neo-yellow-soft: #fff4b7;
+  --neo-pink: #f6cfe1;
+  --neo-pink-soft: #fde8f1;
+  --neo-mint: #bcf1df;
+  --neo-lilac: #dce4ff;
+  --neo-peach: #ffc57f;
+  --neo-muted: #656b75;
+  --neo-border: 3px solid var(--neo-ink);
+  --neo-shadow: 5px 6px 0 var(--neo-ink);
+  --neo-shadow-small: 3px 4px 0 var(--neo-ink);
+
+  min-height: 100vh;
+  background: var(--neo-bg) !important;
+  color: var(--neo-ink) !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+/* ---------------- DESKTOP APP FRAME ---------------- */
+
+.admin-modern .page {
+  min-height: 100vh;
+  background: var(--neo-bg) !important;
+}
+
+.admin-modern .shell {
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 94px 30px 56px 278px !important;
+}
+
+/* Existing generic hero becomes the thin top header. */
+.admin-modern .hero {
+  position: fixed !important;
+  z-index: 80 !important;
+  inset: 0 0 auto 248px !important;
+  width: auto !important;
+  min-height: 70px !important;
+  height: 70px !important;
+  margin: 0 !important;
+  padding: 12px 22px !important;
+  border: 0 !important;
+  border-bottom: var(--neo-border) !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.admin-modern .hero::before,
+.admin-modern .hero::after {
+  display: none !important;
+}
+
+.admin-modern .hero > div:first-child {
+  display: none !important;
+}
+
+.admin-modern .hero .admin-actions {
+  position: absolute !important;
+  top: 10px !important;
+  right: 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.admin-modern .hero .badge.neutral {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 14px !important;
+  background: #effbd1 !important;
+  color: var(--neo-ink) !important;
+  font-weight: 850 !important;
+  box-shadow: 2px 3px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .hero .btn-secondary {
+  min-height: 44px !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 14px !important;
+  background: var(--neo-pink) !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 var(--neo-ink) !important;
+}
+
+/* User/role strip inside the top header. Handles optional success/error alert. */
+.admin-modern .hero + div:not(.success):not(.error),
+.admin-modern .hero + .success + div,
+.admin-modern .hero + .error + div {
+  position: fixed !important;
+  z-index: 82 !important;
+  top: 0 !important;
+  left: 270px !important;
+  height: 70px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  margin: 0 !important;
+  color: var(--neo-ink) !important;
+}
+
+.admin-modern .hero + div:not(.success):not(.error)::before,
+.admin-modern .hero + .success + div::before,
+.admin-modern .hero + .error + div::before {
+  content: "HALO,";
+  font-size: 12px;
+  font-weight: 800;
+  color: #71747b;
+  letter-spacing: .2px;
+}
+
+.admin-modern .hero + div:not(.success):not(.error) > strong,
+.admin-modern .hero + .success + div > strong,
+.admin-modern .hero + .error + div > strong {
+  font-size: 13px !important;
+  font-weight: 950 !important;
+  text-transform: uppercase;
+}
+
+.admin-modern .hero + div:not(.success):not(.error) > span,
+.admin-modern .hero + .success + div > span,
+.admin-modern .hero + .error + div > span {
+  padding: 5px 9px !important;
+  border: 1.8px solid var(--neo-ink) !important;
+  border-radius: 999px !important;
+  background: #e8f5ff !important;
+  color: var(--neo-ink) !important;
+  font-size: 10px !important;
+  font-weight: 850 !important;
+}
+
+/* ---------------- LEFT SIDEBAR ---------------- */
+
+.admin-modern .admin-pro-topbar {
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.admin-modern .admin-pro-main-nav {
+  position: fixed !important;
+  z-index: 100 !important;
+  inset: 0 auto 0 0 !important;
+  width: 248px !important;
+  max-width: 248px !important;
+  height: 100vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 96px 12px 24px !important;
+  border: 0 !important;
+  border-right: var(--neo-border) !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.admin-modern .admin-pro-main-nav::before {
+  content: "🎓  ATTENDANCE\A     RECAP";
+  white-space: pre;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  border-bottom: var(--neo-border);
+  color: var(--neo-ink);
+  font-size: 15px;
+  line-height: 1.15;
+  font-weight: 950;
+  letter-spacing: -.2px;
+  background: #fff;
+}
+
+.admin-modern .admin-pro-main-nav::after {
+  content: "PLATFORM";
+  position: absolute;
+  top: 78px;
+  left: 18px;
+  padding: 2px 9px;
+  border: 1.5px solid var(--neo-ink);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.admin-modern .admin-pro-main-nav button {
+  position: relative;
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  padding: 10px 13px !important;
+  border: 2.5px solid var(--neo-ink) !important;
+  border-radius: 15px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  text-align: left !important;
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease !important;
+}
+
+.admin-modern .admin-pro-main-nav button:nth-child(1) { background: #7fd0f3 !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(2) { background: #d7f7e5 !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(3) { background: #fff3ad !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(4) { background: #f8dbe9 !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(5) { background: #c6f4e7 !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(6) { background: #e4ecff !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(7) { background: #fff0a7 !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(8) { background: #ffead0 !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(9) { background: #e0e8f4 !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(10) { background: #dbe4ff !important; }
+.admin-modern .admin-pro-main-nav button:nth-child(11) { background: #ffdede !important; }
+
+.admin-modern .admin-pro-main-nav button span {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 27px;
+  border: 1.6px solid rgba(17,19,24,.72);
+  border-radius: 9px;
+  background: rgba(255,255,255,.36);
+  font-size: 14px;
+}
+
+.admin-modern .admin-pro-main-nav button:hover {
+  transform: translate(-1px, -1px) !important;
+  box-shadow: var(--neo-shadow-small) !important;
+  filter: saturate(1.05);
+}
+
+.admin-modern .admin-pro-main-nav button.active {
+  transform: translate(-2px, -2px) !important;
+  background: #72c9ef !important;
+  color: var(--neo-ink) !important;
+  box-shadow: var(--neo-shadow-small) !important;
+}
+
+/* Search/notification controls live in the fixed white header. */
+.admin-modern .admin-pro-topbar-actions {
+  position: fixed !important;
+  z-index: 84 !important;
+  top: 11px !important;
+  right: 292px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin: 0 !important;
+}
+
+.admin-modern .admin-pro-icon-action {
+  min-width: 44px !important;
+  min-height: 44px !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 13px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .admin-pro-icon-action:hover {
+  transform: translate(-1px,-1px) !important;
+}
+
+/* ---------------- HOME / HERO BANNER ---------------- */
+
+.admin-modern .admin-pro-home {
+  display: grid !important;
+  gap: 24px !important;
+}
+
+.admin-modern .admin-pro-welcome {
+  position: relative !important;
+  overflow: hidden !important;
+  min-height: 196px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 24px !important;
+  padding: 30px 190px 30px 30px !important;
+  border: var(--neo-border) !important;
+  border-radius: 26px !important;
+  background: linear-gradient(110deg, #ff7c0e 0%, #ff982c 100%) !important;
+  color: #fff !important;
+  box-shadow: var(--neo-shadow) !important;
+}
+
+.admin-modern .admin-pro-welcome::before {
+  content: "";
+  position: absolute;
+  inset: auto -50px -70px 48%;
+  height: 128px;
+  border-radius: 50% 50% 0 0;
+  background: rgba(255,255,255,.11);
+  transform: rotate(-3deg);
+}
+
+.admin-modern .admin-pro-welcome::after {
+  content: "🎓";
+  position: absolute;
+  right: 42px;
+  top: 31px;
+  width: 112px;
+  height: 112px;
+  display: grid;
+  place-items: center;
+  border: 3px solid rgba(17,19,24,.75);
+  border-radius: 50%;
+  background: #fff1d6;
+  box-shadow: 4px 5px 0 rgba(17,19,24,.75);
+  font-size: 58px;
+  transform: rotate(5deg);
+}
+
+.admin-modern .admin-pro-welcome > * {
+  position: relative;
+  z-index: 1;
+}
+
+.admin-modern .admin-pro-kicker {
+  color: #fff !important;
+  opacity: .92;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 1.2px !important;
+}
+
+.admin-modern .admin-pro-welcome h2 {
+  margin-top: 6px !important;
+  color: #fff !important;
+  font-size: clamp(29px, 3vw, 42px) !important;
+  line-height: 1.04 !important;
+  letter-spacing: -1.25px !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,.08);
+}
+
+.admin-modern .admin-pro-welcome p {
+  max-width: 760px !important;
+  color: rgba(255,255,255,.96) !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+}
+
+.admin-modern .admin-pro-welcome-actions {
+  position: absolute !important;
+  left: 30px;
+  bottom: 24px;
+  display: flex !important;
+  gap: 9px !important;
+}
+
+.admin-modern .admin-pro-welcome-actions .btn {
+  min-height: 41px !important;
+  border: 2.5px solid var(--neo-ink) !important;
+  border-radius: 13px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .admin-pro-welcome-actions .btn:hover {
+  transform: translate(-1px,-1px) !important;
+}
+
+/* ---------------- STAT CARDS ---------------- */
+
+.admin-modern .admin-pro-stat-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+  gap: 20px !important;
+}
+
+.admin-modern .admin-pro-stat-card {
+  position: relative !important;
+  min-height: 150px !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 24px !important;
+  border: var(--neo-border) !important;
+  border-radius: 20px !important;
+  background: var(--neo-peach) !important;
+  box-shadow: var(--neo-shadow-small) !important;
+  overflow: hidden !important;
+}
+
+.admin-modern .admin-pro-stat-card:nth-child(1) { background: #ffc37d !important; }
+.admin-modern .admin-pro-stat-card:nth-child(2) { background: #78cef2 !important; }
+.admin-modern .admin-pro-stat-card:nth-child(3) { background: #75deb4 !important; }
+.admin-modern .admin-pro-stat-card:nth-child(4) { background: #ffe66c !important; }
+.admin-modern .admin-pro-stat-card:nth-child(5) { background: #f6cee1 !important; }
+.admin-modern .admin-pro-stat-card:nth-child(6) { background: #cadcfb !important; }
+
+.admin-modern .admin-pro-stat-card::after {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  right: -26px;
+  bottom: -42px;
+  border-radius: 32px;
+  border: 12px solid rgba(17,19,24,.08);
+  transform: rotate(-14deg);
+}
+
+.admin-modern .admin-pro-stat-icon {
+  position: absolute !important;
+  top: 20px !important;
+  right: 20px !important;
+  width: 42px !important;
+  height: 42px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  font-size: 20px !important;
+  box-shadow: 2px 3px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .admin-pro-stat-card > div {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-modern .admin-pro-stat-card strong {
+  color: var(--neo-ink) !important;
+  font-size: 34px !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: -1.3px;
+}
+
+.admin-modern .admin-pro-stat-card span:not(.admin-pro-stat-icon) {
+  color: var(--neo-ink) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+}
+
+/* ---------------- PANELS / CARDS ---------------- */
+
+.admin-modern .panel {
+  border: var(--neo-border) !important;
+  border-radius: 20px !important;
+  background: #fff !important;
+  box-shadow: var(--neo-shadow-small) !important;
+}
+
+.admin-modern .panel-head {
+  min-height: 68px !important;
+  padding: 16px 20px !important;
+  border: 0 !important;
+  border-bottom: 2px solid var(--neo-ink) !important;
+  background: transparent !important;
+}
+
+.admin-modern .panel-head h2 {
+  color: var(--neo-ink) !important;
+  font-size: 18px !important;
+  font-weight: 950 !important;
+  letter-spacing: -.35px;
+}
+
+.admin-modern .panel-head p,
+.admin-modern .muted {
+  color: var(--neo-muted) !important;
+}
+
+.admin-modern .panel-body {
+  padding: 20px !important;
+}
+
+.admin-modern .admin-pro-home-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, .75fr) !important;
+  gap: 22px !important;
+}
+
+.admin-modern .admin-pro-today-panel {
+  background: #fff8c9 !important;
+}
+
+.admin-modern .admin-pro-quick-panel {
+  background: #d9f7e9 !important;
+}
+
+.admin-modern .admin-pro-progress-panel {
+  background: #eef4ff !important;
+}
+
+.admin-modern .admin-pro-today-item {
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 15px !important;
+  background: #fff !important;
+  box-shadow: 2px 3px 0 rgba(17,19,24,.16) !important;
+}
+
+.admin-modern .admin-pro-time strong,
+.admin-modern .admin-pro-today-main strong,
+.admin-modern .admin-pro-quick-grid strong,
+.admin-modern .admin-pro-progress-head strong {
+  color: var(--neo-ink) !important;
+  font-weight: 900 !important;
+}
+
+.admin-modern .admin-pro-quick-grid {
+  gap: 12px !important;
+}
+
+.admin-modern .admin-pro-quick-grid button {
+  min-height: 112px !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 15px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .admin-pro-quick-grid button:nth-child(1) { background: #d9f1ff !important; }
+.admin-modern .admin-pro-quick-grid button:nth-child(2) { background: #fff2a9 !important; }
+.admin-modern .admin-pro-quick-grid button:nth-child(3) { background: #ffdce9 !important; }
+.admin-modern .admin-pro-quick-grid button:nth-child(4) { background: #d8f5e7 !important; }
+
+.admin-modern .admin-pro-quick-grid button:hover,
+.admin-modern .admin-pro-course-progress:hover {
+  transform: translate(-1px,-1px) !important;
+  box-shadow: var(--neo-shadow-small) !important;
+}
+
+.admin-modern .admin-pro-course-progress {
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 15px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 rgba(17,19,24,.14) !important;
+}
+
+.admin-modern .admin-pro-progress-track {
+  height: 10px !important;
+  border: 1.7px solid var(--neo-ink) !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  overflow: hidden;
+}
+
+.admin-modern .admin-pro-progress-track span {
+  background: var(--neo-orange) !important;
+}
+
+/* ---------------- WORKSPACE / FORMS / TABLES ---------------- */
+
+.admin-modern .course-admin-layout {
+  gap: 22px !important;
+}
+
+.admin-modern .course-sidebar {
+  top: 88px !important;
+  max-height: calc(100vh - 112px) !important;
+  background: #fff9ce !important;
+}
+
+.admin-modern .course-btn {
+  margin-bottom: 8px;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 rgba(17,19,24,.12) !important;
+}
+
+.admin-modern .course-btn.active {
+  background: var(--neo-blue) !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 3px 4px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .selected-course-head {
+  border: var(--neo-border) !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: var(--neo-shadow-small) !important;
+}
+
+.admin-modern .tab-bar,
+.admin-modern .admin-tabs {
+  padding: 7px !important;
+  gap: 7px !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: 2px 3px 0 rgba(17,19,24,.1) !important;
+}
+
+.admin-modern .tab-btn {
+  border: 2px solid transparent !important;
+  border-radius: 11px !important;
+  color: var(--neo-ink) !important;
+  font-weight: 850 !important;
+}
+
+.admin-modern .tab-btn.active {
+  border-color: var(--neo-ink) !important;
+  background: var(--neo-yellow) !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 2px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .btn {
+  min-height: 42px !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 12px !important;
+  color: var(--neo-ink) !important;
+  font-weight: 850 !important;
+  box-shadow: 2px 3px 0 rgba(17,19,24,.82) !important;
+}
+
+.admin-modern .btn:hover:not(:disabled) {
+  transform: translate(-1px,-1px) !important;
+  box-shadow: 3px 4px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .btn-primary {
+  background: var(--neo-blue) !important;
+  border-color: var(--neo-ink) !important;
+  color: var(--neo-ink) !important;
+}
+
+.admin-modern .btn-secondary {
+  background: #fff !important;
+  border-color: var(--neo-ink) !important;
+  color: var(--neo-ink) !important;
+}
+
+.admin-modern .btn-success {
+  background: var(--neo-green) !important;
+  border-color: var(--neo-ink) !important;
+  color: var(--neo-ink) !important;
+}
+
+.admin-modern .btn-danger {
+  background: #ffd9d9 !important;
+  border-color: var(--neo-ink) !important;
+  color: #a01d28 !important;
+}
+
+.admin-modern .icon-btn {
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 11px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 var(--neo-ink) !important;
+}
+
+.admin-modern .input,
+.admin-modern .select,
+.admin-modern textarea,
+.admin-modern input:not([type="checkbox"]):not([type="radio"]),
+.admin-modern select {
+  min-height: 43px;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 11px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  box-shadow: none !important;
+}
+
+.admin-modern .input:focus,
+.admin-modern .select:focus,
+.admin-modern textarea:focus,
+.admin-modern input:focus,
+.admin-modern select:focus {
+  outline: 3px solid rgba(123,205,242,.45) !important;
+  outline-offset: 1px;
+}
+
+.admin-modern table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  background: #fff !important;
+}
+
+.admin-modern th {
+  border-bottom: 2px solid var(--neo-ink) !important;
+  background: #fff2ad !important;
+  color: var(--neo-ink) !important;
+  font-weight: 900 !important;
+}
+
+.admin-modern td {
+  border-color: #d8d8d8 !important;
+  color: var(--neo-ink) !important;
+}
+
+.admin-modern tr:nth-child(even) td {
+  background: #fbfbfb !important;
+}
+
+.admin-modern .badge,
+.admin-modern .badge.neutral {
+  border: 1.8px solid var(--neo-ink) !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  color: var(--neo-ink) !important;
+  font-weight: 850 !important;
+}
+
+.admin-modern .success,
+.admin-modern .error {
+  border: 2px solid var(--neo-ink) !important;
+  border-radius: 13px !important;
+  color: var(--neo-ink) !important;
+  box-shadow: 2px 3px 0 rgba(17,19,24,.15) !important;
+}
+
+.admin-modern .success { background: #d9f6e7 !important; }
+.admin-modern .error { background: #ffdede !important; }
+
+/* Modals/popovers stay above the fixed frame and match the theme. */
+.admin-modern .admin-pro-command,
+.admin-modern .admin-pro-notification-popover,
+.admin-modern .admin-pro-confirm {
+  border: var(--neo-border) !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 7px 8px 0 var(--neo-ink) !important;
+}
+
+/* ---------------- RESPONSIVE ---------------- */
+
+@media (max-width: 1180px) {
+  .admin-modern .shell {
+    padding-left: 236px !important;
+    padding-right: 20px !important;
+  }
+
+  .admin-modern .admin-pro-main-nav {
+    width: 212px !important;
+    max-width: 212px !important;
+  }
+
+  .admin-modern .hero {
+    left: 212px !important;
+  }
+
+  .admin-modern .hero + div:not(.success):not(.error),
+  .admin-modern .hero + .success + div,
+  .admin-modern .hero + .error + div {
+    left: 232px !important;
+  }
+
+  .admin-modern .admin-pro-main-nav button {
+    font-size: 11px !important;
+  }
+
+  .admin-modern .admin-pro-stat-grid {
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  }
+
+  .admin-modern .admin-pro-home-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-modern .shell {
+    padding: 156px 14px 34px !important;
+  }
+
+  .admin-modern .hero {
+    inset: 0 0 auto 0 !important;
+    height: 64px !important;
+    min-height: 64px !important;
+    border-bottom-width: 2px !important;
+  }
+
+  .admin-modern .hero .admin-actions {
+    right: 8px !important;
+    top: 8px !important;
+  }
+
+  .admin-modern .hero .badge.neutral {
+    display: none !important;
+  }
+
+  .admin-modern .hero + div:not(.success):not(.error),
+  .admin-modern .hero + .success + div,
+  .admin-modern .hero + .error + div {
+    left: 14px !important;
+    top: 0 !important;
+    height: 64px !important;
+  }
+
+  .admin-modern .hero + div:not(.success):not(.error) > span,
+  .admin-modern .hero + .success + div > span,
+  .admin-modern .hero + .error + div > span {
+    display: none !important;
+  }
+
+  .admin-modern .admin-pro-main-nav {
+    position: fixed !important;
+    z-index: 70 !important;
+    top: 64px !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: 76px !important;
+    flex-direction: row !important;
+    gap: 7px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding: 10px 12px !important;
+    border-right: 0 !important;
+    border-bottom: 2px solid var(--neo-ink) !important;
+  }
+
+  .admin-modern .admin-pro-main-nav::before,
+  .admin-modern .admin-pro-main-nav::after {
+    display: none !important;
+  }
+
+  .admin-modern .admin-pro-main-nav button {
+    width: auto !important;
+    min-width: max-content !important;
+    min-height: 50px !important;
+    padding: 8px 11px !important;
+    border-width: 2px !important;
+    box-shadow: none !important;
+  }
+
+  .admin-modern .admin-pro-main-nav button.active {
+    transform: none !important;
+    box-shadow: 2px 2px 0 var(--neo-ink) !important;
+  }
+
+  .admin-modern .admin-pro-topbar-actions {
+    display: none !important;
+  }
+
+  .admin-modern .admin-pro-welcome {
+    min-height: 230px !important;
+    padding: 24px 24px 72px !important;
+    border-radius: 20px !important;
+  }
+
+  .admin-modern .admin-pro-welcome::after {
+    right: 18px;
+    top: 18px;
+    width: 74px;
+    height: 74px;
+    font-size: 38px;
+    opacity: .92;
+  }
+
+  .admin-modern .admin-pro-welcome h2 {
+    max-width: calc(100% - 80px);
+    font-size: 28px !important;
+  }
+
+  .admin-modern .admin-pro-welcome-actions {
+    left: 24px;
+    right: 24px;
+    bottom: 18px;
+  }
+
+  .admin-modern .admin-pro-stat-grid {
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+    gap: 12px !important;
+  }
+
+  .admin-modern .admin-pro-stat-card {
+    min-height: 130px !important;
+    padding: 18px !important;
+    border-radius: 16px !important;
+  }
+
+  .admin-modern .admin-pro-stat-card strong {
+    font-size: 27px !important;
+  }
+
+  .admin-modern .course-admin-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-modern .course-sidebar {
+    position: static !important;
+    max-height: none !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-modern .shell {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .admin-modern .admin-pro-stat-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-modern .admin-pro-stat-card {
+    min-height: 115px !important;
+  }
+
+  .admin-modern .admin-pro-home-grid,
+  .admin-modern .admin-pro-course-progress-grid,
+  .admin-modern .admin-pro-quick-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-modern .admin-pro-welcome-actions {
+    flex-direction: column !important;
+  }
+
+  .admin-modern .admin-pro-welcome-actions .btn {
+    width: 100% !important;
+  }
+}
