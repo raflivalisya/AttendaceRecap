@@ -72,7 +72,7 @@ export default function PresensiForm({ token, initialInfo }: Props) {
             </form>
 
             <div className="location-help-tip">
-              Presensi tidak menggunakan GPS. Masukkan NPM lalu tekan Kirim Presensi satu kali.
+              1 Device berlaku untuk 1 NPM. Masukkan NPM lalu tekan Kirim Presensi satu kali.
             </div>
           </div>
         </section>
