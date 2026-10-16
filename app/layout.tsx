@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./uiux-overhaul.css";
+import "./soft-theme.css";
 import NetworkStatus from "@/components/ui/NetworkStatus";
 
 export const metadata: Metadata = {
